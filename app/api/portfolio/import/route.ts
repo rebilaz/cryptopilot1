@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { fetchBalances } from "@/lib/portfolio/adapters/etherscanLike";
 
+export const runtime = "nodejs";
+
 const Schema = z.object({
   addresses: z.array(z.object({ chain: z.string(), address: z.string() })),
   includeTokens: z.boolean().optional().default(true),
