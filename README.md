@@ -48,3 +48,8 @@ The application accepts the following optional variables:
 - `DATABASE_URL`
 
 Configure these under **Project → Settings → Environment Variables** in Vercel. Missing values will only trigger a warning at runtime and will not block the build.
+
+## Deployment
+
+- Build command: `npm run build` (default on Vercel).
+- Prisma Client is generated automatically during install via the `postinstall` script.

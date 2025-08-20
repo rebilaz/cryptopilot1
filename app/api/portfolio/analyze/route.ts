@@ -9,6 +9,8 @@ import {
 } from "@/lib/portfolio/analysisEngine";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const BodySchema = z.object({
   positions: z.array(
