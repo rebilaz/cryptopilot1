@@ -3,6 +3,8 @@ import { z } from "zod";
 import { fetchBalances } from "@/lib/portfolio/adapters/etherscanLike";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const Schema = z.object({
   addresses: z.array(z.object({ chain: z.string(), address: z.string() })),
