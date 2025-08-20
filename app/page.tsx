@@ -1,6 +1,7 @@
 // app/page.tsx
 import Link from "next/link";
-import PortfolioDemo from "./components/PortfolioDemo";
+import PortfolioDemo from "@/components/PortfolioDemo";
+import ThemeToggle from "@/components/ThemeToggle";
 
 export default function Home() {
   return (
@@ -130,6 +131,7 @@ function Header() {
         >
           Tableau de bord
         </Link>
+        <ThemeToggle />
       </nav>
     </header>
   );
