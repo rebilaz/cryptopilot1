@@ -1,0 +1,49 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id         String      @id @default(cuid())
+  email      String?     @unique
+  name       String?
+  image      String?
+  portfolios Portfolio[]
+  createdAt  DateTime    @default(now())
+}
+
+model Portfolio {
+  id        String     @id @default(cuid())
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id])
+  label     String     @default("Mon portefeuille")
+  positions Position[]
+  snapshots Snapshot[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Position {
+  id          String    @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id])
+  chain       String
+  asset       String
+  amount      Decimal
+  source      String
+  updatedAt   DateTime  @updatedAt
+}
+
+model Snapshot {
+  id          String    @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id])
+  nav         Decimal
+  vsCurrency  String    @default("USD")
+  data        String?
+  createdAt   DateTime  @default(now())
+}
