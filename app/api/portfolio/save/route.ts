@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { fetchSimplePrices } from "@/lib/prices/coingecko";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const BodySchema = z.object({
   label: z.string().default("Mon portefeuille"),
@@ -27,6 +29,14 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || !session.user?.email) {
     return new NextResponse("Unauthorized", { status: 401 });
+  }
+
+  if (!process.env.DATABASE_URL) {
+    console.warn("[portfolio/save] DATABASE_URL manquant – skip DB write");
+    return NextResponse.json(
+      { ok: false, reason: "db-disabled" },
+      { status: 200 }
+    );
   }
 
   try {
