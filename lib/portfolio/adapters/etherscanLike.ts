@@ -42,9 +42,13 @@ export async function fetchBalances(
   const cfg = CHAIN_CONFIG[chain];
   if (!cfg) throw new Error(`Unsupported chain ${chain}`);
   const apiKey = process.env[cfg.apiKeyEnv];
+  if (!apiKey) {
+    console.warn(`${cfg.apiKeyEnv} environment variable is not set.`);
+  }
+  const apiKeyParam = apiKey || "";
 
   // Native balance
-  const nativeUrl = `${cfg.base}?module=account&action=balance&address=${address}&tag=latest&apikey=${apiKey}`;
+  const nativeUrl = `${cfg.base}?module=account&action=balance&address=${address}&tag=latest&apikey=${apiKeyParam}`;
   const { data: nativeData } = await axios.get(nativeUrl);
   const nativeAmount = Number(nativeData.result) / 10 ** cfg.decimals;
   const positions: Position[] = [
@@ -60,7 +64,7 @@ export async function fetchBalances(
 
   if (!includeTokens) return positions;
 
-  const tokenUrl = `${cfg.base}?module=account&action=tokentx&address=${address}&page=1&offset=100&sort=asc&apikey=${apiKey}`;
+  const tokenUrl = `${cfg.base}?module=account&action=tokentx&address=${address}&page=1&offset=100&sort=asc&apikey=${apiKeyParam}`;
   const { data: tokenData } = await axios.get(tokenUrl);
   const map = new Map<string, { symbol: string; decimals: number; balance: bigint }>();
 

@@ -5,6 +5,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fetchSimplePrices } from "@/lib/prices/coingecko";
 
+export const runtime = "nodejs";
+
 const BodySchema = z.object({
   label: z.string().default("Mon portefeuille"),
   positions: z.array(

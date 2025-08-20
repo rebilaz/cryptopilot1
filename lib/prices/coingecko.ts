@@ -4,6 +4,9 @@ const BASE_URL = "https://api.coingecko.com/api/v3";
 
 function headers() {
   const key = process.env.CG_KEY;
+  if (!key) {
+    console.warn("CG_KEY environment variable is not set.");
+  }
   return key ? { "x-cg-demo-api-key": key } : {};
 }
 

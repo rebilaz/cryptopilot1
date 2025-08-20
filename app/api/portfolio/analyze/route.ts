@@ -8,6 +8,8 @@ import {
   generateAiComment,
 } from "@/lib/portfolio/analysisEngine";
 
+export const runtime = "nodejs";
+
 const BodySchema = z.object({
   positions: z.array(
     z.object({ asset: z.string(), amount: z.number() })

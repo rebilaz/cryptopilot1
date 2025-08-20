@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchMarkets } from "@/lib/prices/coingecko";
 
 export const revalidate = 120;
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

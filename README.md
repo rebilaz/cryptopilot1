@@ -34,3 +34,17 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Environment Variables
+
+The application accepts the following optional variables:
+
+- `CG_KEY`
+- `ETHERSCAN_API_KEY`
+- `POLYGONSCAN_API_KEY`
+- `BSCSCAN_API_KEY`
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+- `DATABASE_URL`
+
+Configure these under **Project → Settings → Environment Variables** in Vercel. Missing values will only trigger a warning at runtime and will not block the build.
