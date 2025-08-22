@@ -34,22 +34,42 @@ class MockPriceProvider implements PriceProvider {
 }
 
 // --------- REAL PROVIDER (Coingecko) ---------
+// Simple in-memory cache (server runtime / per edge invocation instance)
+const priceCache = new Map<string, { at: number; data: SimplePriceMap }>();
+const TTL_MS = 30_000; // 30s pour limiter appels (ajuster selon quota)
+
 class CoingeckoPriceProvider implements PriceProvider {
   async getSimplePrices(ids: string[], vs: string = 'usd'): Promise<SimplePriceMap> {
+    if (!ids.length) return {};
+    const key = ids.sort().join(',') + '|' + vs;
+    const cached = priceCache.get(key);
+    const now = Date.now();
+    if (cached && now - cached.at < TTL_MS) return cached.data;
+
     const raw = await fetchSimplePrices(ids, vs);
     const mapped: SimplePriceMap = {};
     for (const id of Object.keys(raw)) {
       mapped[id] = { usd: raw[id][vs] };
     }
+    priceCache.set(key, { at: now, data: mapped });
     return mapped;
   }
 }
 
 let _provider: PriceProvider | null = null;
 
+function hasAnyKey() {
+  return !!(process.env.COINGECKO_API_KEY || process.env.CG_KEY);
+}
+
+function coingeckoCallsDisabled() {
+  // If env flag set, we always use mock to preserve quota.
+  return process.env.DISABLE_COINGECKO === 'true';
+}
+
 export function getPriceProvider(): PriceProvider {
   if (_provider) return _provider;
-  const useMock = process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' || !process.env.CG_KEY; // fallback mock si pas de clé
+  const useMock = process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' || !hasAnyKey() || coingeckoCallsDisabled();
   _provider = useMock ? new MockPriceProvider() : new CoingeckoPriceProvider();
   return _provider;
 }

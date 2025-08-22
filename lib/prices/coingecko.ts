@@ -2,12 +2,20 @@ import axios from "axios";
 
 const BASE_URL = "https://api.coingecko.com/api/v3";
 
+// Support multiple naming variants to avoid confusion
+function resolveKey(): string | undefined {
+  return (
+    process.env.COINGECKO_API_KEY ||
+    process.env.CG_KEY ||
+    process.env.NEXT_PUBLIC_COINGECKO_API_KEY // (éviter usage côté client – juste fallback)
+  );
+}
+
 function headers() {
-  const key = process.env.CG_KEY;
-  if (!key) {
-    console.warn("CG_KEY environment variable is not set.");
-  }
-  return key ? { "x-cg-demo-api-key": key } : {};
+  const key = resolveKey();
+  if (!key) return {};
+  // Coingecko accepte différents headers selon plan; on tente pro puis demo
+  return { "x-cg-pro-api-key": key, "x-cg-demo-api-key": key };
 }
 
 export async function fetchMarkets(
@@ -30,14 +38,20 @@ export async function fetchMarkets(
 }
 
 export async function fetchSimplePrices(ids: string[], vs = "usd") {
-  const { data } = await axios.get(`${BASE_URL}/simple/price`, {
-    params: {
-      ids: ids.join(","),
-      vs_currencies: vs,
-    },
-    headers: headers(),
-  });
-  return data as Record<string, Record<string, number>>;
+  if (!ids.length) return {} as Record<string, Record<string, number>>;
+  // Endpoint limite ~250 ids; on segmente si nécessaire
+  const chunkSize = 200;
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize));
+  const out: Record<string, Record<string, number>> = {};
+  for (const c of chunks) {
+    const { data } = await axios.get(`${BASE_URL}/simple/price`, {
+      params: { ids: c.join(","), vs_currencies: vs },
+      headers: headers(),
+    });
+    Object.assign(out, data);
+  }
+  return out as Record<string, Record<string, number>>;
 }
 
 export async function fetchMarketChart(

@@ -34,21 +34,20 @@ export function WatchCard({ title, subtitle, icon, actions, className, children,
       animate={prefersReduced ? { opacity: 1 } : { opacity: 1, y: 0 }}
       transition={t}
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 dark:bg-white/5 px-4 py-4 md:px-5 md:py-5",
-        "shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_4px_12px_-2px_rgba(0,0,0,0.4),0_8px_32px_-4px_rgba(0,0,0,0.25)]",
-        "backdrop-blur supports-[backdrop-filter]:bg-white/5 hover:shadow-md transition will-change-transform",
-        "hover:translate-y-[1px] focus-within:ring-2 focus-within:ring-indigo-400/50",
+  "relative overflow-hidden rounded-xl border border-neutral-200 bg-white px-4 py-4 md:px-5 md:py-5",
+  "shadow-sm hover:shadow-md transition will-change-transform",
+  "hover:translate-y-[1px] focus-within:ring-2 focus-within:ring-neutral-800/20",
         className
       )}
     >
       {/* Halo décoratif */}
-      <div aria-hidden className={cn("pointer-events-none absolute inset-0 watch-glow", prefersReduced && "opacity-90")} />
+  <div aria-hidden className="pointer-events-none absolute inset-0" />
       <header className="relative z-10 mb-3 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           {icon && <div className="text-xl shrink-0">{icon}</div>}
           <div className="leading-tight">
-            <h2 className="text-sm font-semibold tracking-wide">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-[11px] uppercase tracking-wide text-white/55 dark:text-white/55">{subtitle}</p>}
+            <h2 className="text-sm font-semibold tracking-wide text-neutral-900">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-[11px] uppercase tracking-wide text-neutral-500">{subtitle}</p>}
           </div>
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}

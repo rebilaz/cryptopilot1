@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+*.service-account.json
+*serviceaccount*.json
+starlit-verve-458814-u9-c237e13b2075.json
 
 # debug
 npm-debug.log*

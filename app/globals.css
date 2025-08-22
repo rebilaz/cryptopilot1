@@ -3,48 +3,36 @@
 @tailwind utilities;
 
 :root {
-  --background: 224 45% 6%;
-  --foreground: 210 40% 98%;
-  --card: 222 47% 8%;
-  --card-foreground: 210 40% 96%;
-  --primary: 250 95% 76%;
-  --primary-foreground: 258 63% 18%;
-  --secondary: 218 30% 18%;
-  --secondary-foreground: 210 40% 96%;
-  --muted: 220 28% 20%;
-  --muted-foreground: 215 20% 72%;
-  --accent: 255 85% 70%;
-  --accent-foreground: 258 63% 16%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 220 30% 22%;
-  --input: 220 30% 22%;
-  --ring: 250 95% 76%;
+  --background: 0 0% 100%;
+  --foreground: 222 20% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 20% 10%;
+  --primary: 213 85% 45%; /* sobre bleu Apple-like */
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 16% 96%;
+  --secondary-foreground: 222 20% 20%;
+  --muted: 210 16% 94%;
+  --muted-foreground: 222 12% 40%;
+  --accent: 213 90% 50%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 72% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 210 16% 90%;
+  --input: 210 16% 90%;
+  --ring: 213 85% 45%;
   --radius: 0.75rem;
 }
 
-.light {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 5%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 5%;
-  --primary: 252 83% 60%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 220 14% 96%;
-  --muted-foreground: 222 15% 36%;
-  --accent: 252 91% 65%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 220 13% 90%;
-  --input: 220 13% 90%;
-  --ring: 252 83% 60%;
-}
-
 html { font-family: var(--font-inter), system-ui, sans-serif; scroll-behavior:smooth; }
-body { @apply bg-background text-foreground antialiased min-h-screen; }
+@layer base {
+  body {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
 ::selection { background: hsl(var(--primary) / .25); color: hsl(var(--foreground)); }
 
 *::-webkit-scrollbar { width:10px; }
@@ -53,28 +41,24 @@ body { @apply bg-background text-foreground antialiased min-h-screen; }
 *::-webkit-scrollbar-thumb:hover { background:hsl(var(--muted) / .8); }
 
 @layer components {
-  .app-shell { @apply flex min-h-screen flex-col; }
-  .app-main { @apply flex flex-1 w-full; }
-  .sidebar { @apply hidden lg:flex w-72 flex-col gap-4 p-5 pr-3 border-r border-white/10 bg-gradient-to-b from-white/5 to-transparent; }
-  .sidebar-section { @apply rounded-2xl bg-white/5 border border-white/10 p-4 space-y-3; }
-  .dashboard-grid { @apply grid w-full gap-6 p-5 pb-20 md:p-8 md:grid-cols-2; }
-  .dashboard-card { @apply rounded-2xl bg-card/60 backdrop-blur border border-white/10 p-5 shadow-soft transition-all hover:shadow-md hover:bg-card/70; }
+  .app-shell { display:flex; min-height:100vh; flex-direction:column; }
+  .app-main { display:flex; flex:1 1 auto; width:100%; }
+  .sidebar { display:none; }
+  @media (min-width:1024px) {
+    .sidebar { display:flex; width:18rem; flex-direction:column; gap:1rem; padding:1.25rem; padding-right:0.75rem; border-right:1px solid hsl(var(--border)); background:#f8f9fb; }
+  }
+  .sidebar-section { border:1px solid hsl(var(--border)); background:#ffffff; border-radius:0.75rem; padding:1rem; }
+  .dashboard-grid { display:grid; width:100%; gap:1.5rem; padding:1.25rem; padding-bottom:5rem; }
+  @media (min-width:768px){ .dashboard-grid { grid-template-columns:repeat(2,minmax(0,1fr)); padding:2rem; gap:1.75rem; } }
+  .dashboard-card { border:1px solid hsl(var(--border)); background:#ffffff; border-radius:0.75rem; padding:1.25rem; box-shadow:0 1px 2px rgba(0,0,0,0.06),0 3px 8px -2px rgba(0,0,0,0.08); transition:box-shadow .25s ease, transform .25s ease; }
+  .dashboard-card:hover { box-shadow:0 4px 12px rgba(0,0,0,0.08),0 12px 28px -6px rgba(0,0,0,0.10); }
 }
 
 @layer utilities {
-  .bg-gradient-deep { background: radial-gradient(circle at 20% 20%, rgba(120,120,255,0.20), transparent 60%), radial-gradient(circle at 80% 50%, rgba(120,80,255,0.16), transparent 65%), linear-gradient(140deg,#0f1524 10%,#141b33 55%,#1b2140 90%); }
-  /* Halo subtil multi-teinte pour WatchCard */
-  .watch-glow { background:
-    radial-gradient(circle at 20% 25%, rgba(99,102,241,0.18), transparent 55%),
-    radial-gradient(circle at 80% 70%, rgba(16,185,129,0.14), transparent 60%),
-    radial-gradient(circle at 50% 50%, rgba(255,255,255,0.06), transparent 65%);
-    mix-blend-mode: plus-lighter;
-  }
+  .bg-gradient-deep { background: linear-gradient(180deg,#ffffff 0%,#f2f4f7 100%); }
+  .watch-glow { background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0.06), transparent 70%); }
   @media (prefers-reduced-motion: reduce) {
-    .watch-glow { background:
-      radial-gradient(circle at 35% 40%, rgba(99,102,241,0.15), transparent 60%),
-      radial-gradient(circle at 65% 65%, rgba(16,185,129,0.12), transparent 65%);
-    }
+    .watch-glow { background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0.05), transparent 70%); }
   }
 }
 

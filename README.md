@@ -53,3 +53,14 @@ Configure these under **Project → Settings → Environment Variables** in Verc
 
 - Build command: `npm run build` (default on Vercel).
 - Prisma Client is generated automatically during install via the `postinstall` script.
+
+## Désactiver les appels Coingecko
+Mettre dans `.env.local`:
+```
+DISABLE_COINGECKO=true
+```
+Ou côté client forcer mock:
+```
+NEXT_PUBLIC_USE_MOCK_PRICES=true
+```
+La priorité: `DISABLE_COINGECKO` > absence de clé > `NEXT_PUBLIC_USE_MOCK_PRICES`.

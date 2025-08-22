@@ -42,19 +42,19 @@ export function PriceTicker({ ids = DEFAULT_IDS }: { ids?: PriceRow[] }) {
       ariaDescription="Affichage simplifié de prix mock (auto API plus tard)."
       icon={<span aria-hidden>💲</span>}
     >
-      {loading && <p className="text-xs text-white/50">Chargement…</p>}
+  {loading && <p className="text-xs text-neutral-500">Chargement…</p>}
       {!loading && (
         <ul className="text-xs space-y-2">
           {ids.map(row => {
             const p = data[row.id];
             if (!p) return <li key={row.id} className="opacity-50">{row.label}</li>;
             const pct = p.change24h ?? 0;
-            const color = pct > 0 ? 'text-emerald-300' : pct < 0 ? 'text-rose-300' : 'text-white/70';
+            const color = pct > 0 ? 'text-neutral-900' : pct < 0 ? 'text-neutral-600' : 'text-neutral-500';
             return (
               <li key={row.id} className="flex items-center justify-between">
-                <span className="font-medium">{row.label}</span>
+                <span className="font-medium text-neutral-900">{row.label}</span>
                 <span className="flex items-center gap-3 tabular-nums">
-                  <span>${p.usd.toFixed(2)}</span>
+                  <span className="text-neutral-700">${p.usd.toFixed(2)}</span>
                   <span className={color} aria-label={`Variation 24h ${pct}%`}>
                     {pct > 0 ? '+' : ''}{pct.toFixed(2)}%
                   </span>
@@ -65,7 +65,7 @@ export function PriceTicker({ ids = DEFAULT_IDS }: { ids?: PriceRow[] }) {
         </ul>
       )}
       {!prefersReduced && (
-        <div className="mt-3 text-[10px] uppercase tracking-wide text-white/35">Mock provider – futur live</div>
+        <div className="mt-3 text-[10px] uppercase tracking-wide text-neutral-500">Mock provider – futur live</div>
       )}
     </WatchCard>
   );

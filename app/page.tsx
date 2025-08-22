@@ -12,6 +12,7 @@ import { PriceTicker } from "@/components/widgets/PriceTicker";
 import { PortfolioBubble } from "@/components/PortfolioBubble";
 import { ProgressionHUD } from "@/components/widgets/ProgressionHUD";
 import { MissionsDaily } from "@/components/widgets/MissionsDaily";
+import PortfolioMain from "@/components/PortfolioMain";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -25,12 +26,13 @@ const fadeUp = {
 export default function DashboardPage() {
   return (
     <main className="w-full">
+  <PortfolioMain />
       <section className="px-5 pt-12 md:pt-16 max-w-6xl mx-auto">
-        <motion.h1 initial="hidden" animate="visible" variants={fadeUp} className="text-3xl md:text-4xl font-semibold tracking-tight leading-tight">
+  <motion.h1 initial="hidden" animate="visible" variants={fadeUp} className="text-3xl md:text-4xl font-semibold tracking-tight leading-tight text-neutral-900">
           Ton copilote crypto.
           <br className="hidden sm:block" /> Clarté, pédagogie, progression.
         </motion.h1>
-        <motion.p initial="hidden" animate="visible" variants={fadeUp} custom={1} className="mt-5 max-w-xl text-sm md:text-base text-white/70">
+  <motion.p initial="hidden" animate="visible" variants={fadeUp} custom={1} className="mt-5 max-w-xl text-sm md:text-base text-neutral-600">
           Analyse ton portefeuille, comprends tes risques et avance chaque jour avec des missions concrètes. Aucun signal d'achat / vente, seulement de la compréhension.
         </motion.p>
       </section>

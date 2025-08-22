@@ -7,9 +7,9 @@ import { motion, useReducedMotion } from "framer-motion";
 
 // Couleurs label
 const labelStyles: Record<ReturnType<typeof computeSynthetic>['label'], string> = {
-  Faible: "text-emerald-300 bg-emerald-400/10",
-  Modéré: "text-amber-200 bg-amber-400/10",
-  Élevé: "text-rose-200 bg-rose-400/10",
+  Faible: "text-neutral-900 bg-neutral-200",
+  Modéré: "text-neutral-900 bg-neutral-300",
+  Élevé: "text-neutral-50 bg-neutral-800",
 };
 
 export function RiskSynthetic() {
@@ -92,11 +92,11 @@ export function RiskSynthetic() {
             )}
             <defs>
               <linearGradient id="gradRisk" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#6366f1" />
-                <stop offset="70%" stopColor="#10b981" />
+                <stop offset="0%" stopColor="#111" />
+                <stop offset="100%" stopColor="#555" />
               </linearGradient>
             </defs>
-            <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="fill-white text-sm font-semibold">
+            <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="fill-neutral-900 text-sm font-semibold">
               {base.value}
             </text>
           </svg>
@@ -111,10 +111,10 @@ export function RiskSynthetic() {
               </span>
             )}
           </div>
-          <p className="text-xs text-white/65 leading-relaxed max-w-sm" id="risk-expl">
+          <p className="text-xs text-neutral-600 leading-relaxed max-w-sm" id="risk-expl">
             {base.explanation}
           </p>
-          <p className="text-[10px] uppercase tracking-wide text-white/40">Aggrégation pédagogique – pas un conseil.</p>
+          <p className="text-[10px] uppercase tracking-wide text-neutral-500">Aggrégation pédagogique – pas un conseil.</p>
         </div>
       </div>
     </WatchCard>
