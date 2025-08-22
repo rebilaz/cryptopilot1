@@ -53,7 +53,7 @@ export default function DashboardPage() {
               <CardTitle>Score synthétique</CardTitle>
             </CardHeader>
             <CardContent>
-              <ScoreCard />
+              <ScoreCard summary={{ nav: 0, risk: "—", score: 0 }} />
             </CardContent>
           </Card>
         </motion.div>
