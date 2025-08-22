@@ -1,141 +1,85 @@
-// app/page.tsx
-import Link from "next/link";
-import PortfolioDemo from "@/components/PortfolioDemo";
-import ThemeToggle from "@/components/ThemeToggle";
+"use client";
+import { motion } from "framer-motion";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import ScoreCard from "@/components/ScoreCard";
+import NAVChart from "@/components/NAVChart";
+import PortfolioPie from "@/components/PortfolioPie";
+import PortfolioTable from "@/components/PortfolioTable";
+import { MarketStatus } from "@/components/MarketStatus";
+import { ListSignals } from "@/components/ListSignals";
+import { RiskSynthetic } from "@/components/widgets/RiskSynthetic";
+import { PriceTicker } from "@/components/widgets/PriceTicker";
+import { PortfolioBubble } from "@/components/PortfolioBubble";
+import { ProgressionHUD } from "@/components/widgets/ProgressionHUD";
+import { MissionsDaily } from "@/components/widgets/MissionsDaily";
 
-export default function Home() {
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: (i: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.55, ease: 'easeOut', delay: i * 0.07 },
+  }),
+};
+
+export default function DashboardPage() {
   return (
-    <main className="relative min-h-screen bg-[#0f1524] text-white">
-      {/* Accents de fond discrets */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -top-24 -left-24 h-80 w-80 rounded-full bg-indigo-500/10 blur-3xl" />
-        <div className="absolute -bottom-32 -right-24 h-80 w-80 rounded-full bg-emerald-400/10 blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,0.06),transparent_55%)]" />
-      </div>
-
-      {/* Barre minimale */}
-      <Header />
-
-      {/* HERO */}
-      <section className="mx-auto w-full max-w-6xl px-5 pt-10 pb-16 md:pt-16 md:pb-24">
-        <div className="mx-auto max-w-2xl text-center">
-          <h1 className="text-3xl md:text-5xl font-semibold tracking-tight">
-            Ton portefeuille crypto, analysé par l’IA
-          </h1>
-          <p className="mt-3 md:mt-4 text-base md:text-lg text-white/70">
-            Comprends ton risque, la cohérence de ton allocation et progresse
-            comme un investisseur — sans signaux d’achat/vente.
-          </p>
-
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a
-              href="#demo"
-              className="inline-flex items-center justify-center rounded-xl px-6 py-3 font-medium
-                         bg-indigo-600 hover:bg-indigo-700
-                         focus:outline-none focus:ring-4 focus:ring-indigo-400/40
-                         transition-[background,transform] will-change-transform hover:-translate-y-0.5"
-            >
-              Analyser mon portefeuille
-            </a>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center justify-center rounded-xl px-6 py-3 font-medium
-                         border border-white/15 bg-white/5 hover:bg-white/10
-                         focus:outline-none focus:ring-4 focus:ring-white/20"
-            >
-              Accéder au tableau de bord
-            </Link>
-          </div>
-
-          <p className="mt-3 text-xs text-white/40">
-            Éducatif uniquement · aucun conseil en investissement
-          </p>
-        </div>
+    <main className="w-full">
+      <section className="px-5 pt-12 md:pt-16 max-w-6xl mx-auto">
+        <motion.h1 initial="hidden" animate="visible" variants={fadeUp} className="text-3xl md:text-4xl font-semibold tracking-tight leading-tight">
+          Ton copilote crypto.
+          <br className="hidden sm:block" /> Clarté, pédagogie, progression.
+        </motion.h1>
+        <motion.p initial="hidden" animate="visible" variants={fadeUp} custom={1} className="mt-5 max-w-xl text-sm md:text-base text-white/70">
+          Analyse ton portefeuille, comprends tes risques et avance chaque jour avec des missions concrètes. Aucun signal d'achat / vente, seulement de la compréhension.
+        </motion.p>
       </section>
-
-      {/* DÉMO INTERACTIVE */}
-      <section id="demo" className="mx-auto w-full max-w-6xl px-5 pb-12 md:pb-16">
-        <PortfolioDemo />
-      </section>
-
-      {/* COMMENT ÇA MARCHE */}
-      <HowItWorks />
-
-      {/* DIFFÉRENCIATION */}
-      <Differentiators />
-
-      {/* APERÇU VISUEL (placeholder) */}
-      <section className="mx-auto w-full max-w-6xl px-5 py-12 md:py-16">
-        <div className="rounded-2xl border border-white/10 bg-white/5">
-          <div className="aspect-[16/9] w-full grid place-items-center rounded-2xl">
-            <span className="text-sm text-white/50">Aperçu du tableau de bord</span>
-          </div>
-        </div>
-        <p className="mt-3 text-center text-xs text-white/50">
-          Une interface claire, pensée pour progresser.
-        </p>
-      </section>
-
-      {/* FAQ */}
-      <Faq />
-
-      {/* CTA FINAL */}
-      <section className="mx-auto w-full max-w-6xl px-5 py-16 md:py-20">
-        <div className="rounded-2xl border border-white/10 bg-[#11172a] p-8 md:p-12 text-center">
-          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">
-            Prêt à commencer ?
-          </h2>
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <a
-              href="#demo"
-              className="inline-flex items-center justify-center rounded-xl px-6 py-3 font-medium
-                         bg-emerald-600 hover:bg-emerald-700
-                         focus:outline-none focus:ring-4 focus:ring-emerald-400/40
-                         transition-[background,transform] will-change-transform hover:-translate-y-0.5"
-            >
-              Tester gratuitement
-            </a>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center justify-center rounded-xl px-6 py-3 font-medium
-                         border border-white/15 bg-white/5 hover:bg-white/10
-                         focus:outline-none focus:ring-4 focus:ring-white/20"
-            >
-              Accéder au tableau de bord
-            </Link>
-          </div>
-          <p className="mt-3 text-xs text-white/40">
-            Éducatif uniquement · aucun conseil en investissement
-          </p>
-        </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer className="mx-auto w-full max-w-6xl px-5 pb-10 text-center text-xs text-white/40">
-        © {new Date().getFullYear()} CryptoPilot — Contenu éducatif uniquement
-      </footer>
+      <div className="dashboard-grid max-w-6xl mx-auto">
+  {/* Ligne 1: Progression | Missions | Risque Synthétique | Prix | Marché */}
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0}><ProgressionHUD /></motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={1}><MissionsDaily /></motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={2}><RiskSynthetic /></motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={3}><PriceTicker /></motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={4}><MarketStatus /></motion.div>
+  {/* Ligne 2: Opportunités | Risques | Score */}
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={5}><ListSignals title="Opportunités" variant="positive" /></motion.div>
+    {/* Ligne 2: Risques + autres */}
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={6}><ListSignals title="Risques" variant="negative" /></motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={7}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Score synthétique</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScoreCard />
+            </CardContent>
+          </Card>
+        </motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={8}>
+          <Card>
+            <CardHeader><CardTitle>Valeur du portefeuille</CardTitle></CardHeader>
+            <CardContent><NAVChart /></CardContent>
+          </Card>
+        </motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={9}>
+          <Card className="md:col-span-2">
+            <CardHeader><CardTitle>Allocation</CardTitle></CardHeader>
+            <CardContent><PortfolioPie /></CardContent>
+          </Card>
+        </motion.div>
+  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={10} className="md:col-span-2">
+          <Card>
+            <CardHeader><CardTitle>Détails</CardTitle></CardHeader>
+            <CardContent><PortfolioTable /></CardContent>
+          </Card>
+        </motion.div>
+  </div>
+  <PortfolioBubble />
     </main>
   );
 }
 
 /* ====== SOUS-COMPOSANTS ====== */
-
-function Header() {
-  return (
-    <header className="mx-auto w-full max-w-6xl px-5 py-5 flex items-center justify-between">
-      <div className="text-sm tracking-wide text-white/60">CryptoPilot</div>
-      <nav className="flex items-center gap-2">
-        <Link
-          href="/dashboard"
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
-        >
-          Tableau de bord
-        </Link>
-        <ThemeToggle />
-      </nav>
-    </header>
-  );
-}
 
 function HowItWorks() {
   const steps = [

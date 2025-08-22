@@ -3,19 +3,83 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: 224 45% 6%;
+  --foreground: 210 40% 98%;
+  --card: 222 47% 8%;
+  --card-foreground: 210 40% 96%;
+  --primary: 250 95% 76%;
+  --primary-foreground: 258 63% 18%;
+  --secondary: 218 30% 18%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 220 28% 20%;
+  --muted-foreground: 215 20% 72%;
+  --accent: 255 85% 70%;
+  --accent-foreground: 258 63% 16%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 220 30% 22%;
+  --input: 220 30% 22%;
+  --ring: 250 95% 76%;
+  --radius: 0.75rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+.light {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 5%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 5%;
+  --primary: 252 83% 60%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 222 15% 36%;
+  --accent: 252 91% 65%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 220 13% 90%;
+  --input: 220 13% 90%;
+  --ring: 252 83% 60%;
+}
+
+html { font-family: var(--font-inter), system-ui, sans-serif; scroll-behavior:smooth; }
+body { @apply bg-background text-foreground antialiased min-h-screen; }
+::selection { background: hsl(var(--primary) / .25); color: hsl(var(--foreground)); }
+
+*::-webkit-scrollbar { width:10px; }
+*::-webkit-scrollbar-track { background:transparent; }
+*::-webkit-scrollbar-thumb { background:hsl(var(--muted)); border-radius:999px; }
+*::-webkit-scrollbar-thumb:hover { background:hsl(var(--muted) / .8); }
+
+@layer components {
+  .app-shell { @apply flex min-h-screen flex-col; }
+  .app-main { @apply flex flex-1 w-full; }
+  .sidebar { @apply hidden lg:flex w-72 flex-col gap-4 p-5 pr-3 border-r border-white/10 bg-gradient-to-b from-white/5 to-transparent; }
+  .sidebar-section { @apply rounded-2xl bg-white/5 border border-white/10 p-4 space-y-3; }
+  .dashboard-grid { @apply grid w-full gap-6 p-5 pb-20 md:p-8 md:grid-cols-2; }
+  .dashboard-card { @apply rounded-2xl bg-card/60 backdrop-blur border border-white/10 p-5 shadow-soft transition-all hover:shadow-md hover:bg-card/70; }
+}
+
+@layer utilities {
+  .bg-gradient-deep { background: radial-gradient(circle at 20% 20%, rgba(120,120,255,0.20), transparent 60%), radial-gradient(circle at 80% 50%, rgba(120,80,255,0.16), transparent 65%), linear-gradient(140deg,#0f1524 10%,#141b33 55%,#1b2140 90%); }
+  /* Halo subtil multi-teinte pour WatchCard */
+  .watch-glow { background:
+    radial-gradient(circle at 20% 25%, rgba(99,102,241,0.18), transparent 55%),
+    radial-gradient(circle at 80% 70%, rgba(16,185,129,0.14), transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,0.06), transparent 65%);
+    mix-blend-mode: plus-lighter;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .watch-glow { background:
+      radial-gradient(circle at 35% 40%, rgba(99,102,241,0.15), transparent 60%),
+      radial-gradient(circle at 65% 65%, rgba(16,185,129,0.12), transparent 65%);
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Réduction animations globales */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition-duration: 0s !important; transition-delay: 0s !important; }
 }

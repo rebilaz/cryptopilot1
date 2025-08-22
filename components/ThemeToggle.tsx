@@ -3,17 +3,23 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 export default function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+
   useEffect(() => setMounted(true), []);
+
   if (!mounted) return null;
+
+  const isDark = resolvedTheme === "dark";
+
   return (
     <button
-      aria-label="Toggle theme"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70 hover:bg-white/10"
+      type="button"
+      aria-label={isDark ? "Passer en mode clair" : "Passer en mode sombre"}
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="rounded-full border border-white/20 p-2 text-lg transition-colors hover:bg-white/10 focus:outline-none"
     >
-      {theme === "dark" ? "Mode clair" : "Mode sombre"}
+      {isDark ? "☀️" : "🌙"}
     </button>
   );
 }
