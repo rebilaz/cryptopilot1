@@ -1,122 +1,37 @@
 "use client";
 
-import DemoBanner from "@/components/DemoBanner";
-import ThemeToggle from "@/components/ThemeToggle";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-import ScoreCard from "@/components/ScoreCard";
+interface ScoreSummary {
+  nav: number;      // Net Asset Value
+  risk: string;     // e.g. "faible", "modéré", "élevé"
+  score: number;    // 0-100
+}
 
-const pieData = [
-  { name: "BTC", value: 50 },
-  { name: "ETH", value: 30 },
-  { name: "USDT", value: 20 },
-];
-const COLORS = ["#f7931a", "#627eea", "#26a17b"];
+interface Props { summary: ScoreSummary }
 
-export default function DashboardPage() {
+export default function ScoreCard({ summary }: Props) {
+  const { nav, risk, score } = summary;
+
+  // Couleur badge selon risque
+  const riskClass =
+    risk.toLowerCase().includes("élev") || risk.toLowerCase().includes("eleve")
+      ? "bg-red-100 text-red-700"
+      : risk.toLowerCase().includes("mod")
+      ? "bg-amber-100 text-amber-700"
+      : "bg-emerald-100 text-emerald-700";
+
   return (
-    <main className="min-h-screen bg-[#0f1524] text-white">
-      {/* Bannière démo */}
-      <DemoBanner />
-
-      <div className="p-6 mx-auto max-w-6xl space-y-8">
-        {/* Toggle thème */}
-        <div className="flex justify-end">
-          <ThemeToggle />
-        </div>
-
-        {/* Cartes horizontales */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-            <div className="text-sm text-white/70">NAV</div>
-            <div className="mt-1 text-2xl font-semibold">--</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-            <div className="text-sm text-white/70">Perf 7j</div>
-            <div className="mt-1 text-2xl font-semibold">--</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-            <div className="text-sm text-white/70">Risque</div>
-            <div className="mt-1 text-2xl font-semibold">--</div>
-          </div>
-        </div>
-
-        {/* Graphique camembert */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <h2 className="text-lg font-semibold mb-4">Allocation</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={90}
-                  label
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={index} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Table statique */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="text-white/60 text-sm">
-              <tr className="border-b border-white/10">
-                <th className="px-4 py-3">Actif</th>
-                <th className="px-4 py-3">Poids</th>
-                <th className="px-4 py-3">Prix</th>
-                <th className="px-4 py-3">Variation</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/10">
-              <tr>
-                <td className="px-4 py-3">BTC</td>
-                <td className="px-4 py-3">50%</td>
-                <td className="px-4 py-3">65,000</td>
-                <td className="px-4 py-3 text-green-400">+2.1%</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-3">ETH</td>
-                <td className="px-4 py-3">30%</td>
-                <td className="px-4 py-3">3,200</td>
-                <td className="px-4 py-3 text-green-400">+1.5%</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-3">USDT</td>
-                <td className="px-4 py-3">20%</td>
-                <td className="px-4 py-3">1</td>
-                <td className="px-4 py-3 text-white/70">0%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Score Card */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 flex flex-col items-start gap-3 transition-transform duration-200 hover:scale-105 hover:shadow-md">
-          <div className="text-base font-semibold mb-1">Score global</div>
-          <div className="text-3xl font-bold mb-2">
-            72
-            <span className="text-lg font-normal text-white/60">/100</span>
-          </div>
-          <span className="inline-block rounded-full bg-amber-400/10 text-amber-200 px-3 py-1 text-xs font-medium">
-            Risque modéré
-          </span>
-        </div>
+    <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-3 max-w-sm">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold tracking-wide text-neutral-800">Score global</h3>
+        <span className={`px-2 py-1 rounded-full text-[11px] font-medium ${riskClass}`}>{risk}</span>
       </div>
-    </main>
+      <div className="flex items-end gap-2">
+        <span className="text-4xl font-bold tabular-nums text-neutral-900">{score}</span>
+        <span className="text-neutral-400 mb-1 text-sm">/100</span>
+      </div>
+      <div className="text-[12px] text-neutral-600">
+        Valeur portefeuille&nbsp;: <span className="font-medium">{nav.toLocaleString(undefined,{ maximumFractionDigits:2 })} $</span>
+      </div>
+    </div>
   );
 }
