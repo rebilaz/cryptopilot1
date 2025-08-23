@@ -47,10 +47,10 @@ async function fetchBatch(ids: string[]): Promise<Record<string,{usd:number}>> {
 }
 
 export function usePortfolio(defaults: PortfolioPosition[] = []): PortfolioState {
-  const [positions, setPositions] = useState<PortfolioPosition[]>(() => {
-    const stored = loadStored();
-    return stored.length ? stored : defaults;
-  });
+  // Pour éviter un décalage SSR/CSR (hydration mismatch), on initialise toujours avec les defaults
+  // puis on hydrate depuis localStorage après le premier render côté client.
+  const [positions, setPositions] = useState<PortfolioPosition[]>(defaults);
+  const [hydrated, setHydrated] = useState(false);
   const [prices, setPrices] = useState<Record<string,{usd:number}>>({});
   const [loading, setLoading] = useState(false);
   const lastFetchRef = useRef<number>(0);
@@ -77,7 +77,15 @@ export function usePortfolio(defaults: PortfolioPosition[] = []): PortfolioState
     }
   }, [ids]);
 
-  useEffect(() => { storePositions(positions); }, [positions]);
+  // Hydrate depuis localStorage après mount uniquement
+  useEffect(() => {
+    const stored = loadStored();
+    if (stored.length) setPositions(stored);
+    setHydrated(true);
+  }, []);
+
+  // Persistance uniquement après hydratation pour ne pas écraser trop tôt le localStorage
+  useEffect(() => { if (hydrated) storePositions(positions); }, [positions, hydrated]);
   useEffect(() => { refresh(); }, [refresh]);
 
   const totalValue = useMemo(() => positions.reduce((acc, p) => {

@@ -1,8 +1,9 @@
 "use client";
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
-import { useState, useMemo, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { searchTokens, TOKENS, type TokenMeta } from '@/lib/prices/tokens';
+import { computeMetrics } from '@/lib/portfolio/metrics';
 import PortfolioChat from './PortfolioChat';
 
 export function PortfolioMain() {
@@ -17,20 +18,57 @@ export function PortfolioMain() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const [selectedToken, setSelectedToken] = useState<TokenMeta | null>(null);
-  const [remote, setRemote] = useState<TokenMeta[]>([]);
+  const [remote, setRemote] = useState<TokenMeta[]>([]); // suggestions distantes déjà filtrées/rankées par l'API
+  const [remoteQuery, setRemoteQuery] = useState<string>('');
+  const [userTokens, setUserTokens] = useState<TokenMeta[]>([]); // tokens ajoutés manuellement (persist localStorage)
   const remoteAbort = useRef<AbortController | null>(null);
   const comboRef = useRef<HTMLDivElement | null>(null);
 
   const suggestions = useMemo(() => {
-    if (!symbol.trim()) return [] as TokenMeta[];
     const q = symbol.trim();
-    const local = searchTokens(q);
+    if (!q) return [] as TokenMeta[];
+    const qLower = q.toLowerCase();
+    // Si la requête distante correspond à la saisie actuelle, utilise directement remote (déjà ranké + limité par l'API)
+    if (remote.length && remoteQuery === q) {
+      // merge userTokens (prend ceux qui matchent mais absents)
+      const merged = [...remote];
+      userTokens.forEach(u => {
+        if ((u.symbol.toLowerCase().startsWith(qLower) || u.name.toLowerCase().includes(qLower) || u.id.toLowerCase().startsWith(qLower)) && !merged.find(m => m.symbol.toUpperCase() === u.symbol.toUpperCase())) {
+          merged.push(u);
+        }
+      });
+      return merged;
+    }
+    // Fallback local
+    const local = searchTokens(q, 40);
+    const user = userTokens.filter(t => t.symbol.toLowerCase().startsWith(qLower) || t.name.toLowerCase().includes(qLower) || t.id.toLowerCase().startsWith(qLower));
     const merged = [...local];
-    remote.forEach(r => {
-      if (!merged.find(m => m.symbol.toUpperCase() === r.symbol.toUpperCase())) merged.push(r);
-    });
-    return merged;
-  }, [symbol, remote]);
+    user.forEach(r => { if (!merged.find(m => m.symbol.toUpperCase() === r.symbol.toUpperCase())) merged.push(r); });
+    return merged.slice(0, 40);
+  }, [symbol, remote, remoteQuery, userTokens]);
+  // Charger userTokens depuis localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('userTokens');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setUserTokens(parsed.filter(t => t && t.id && t.symbol && t.name));
+      }
+    } catch {}
+  }, []);
+
+  function persistUserTokens(next: TokenMeta[]) {
+    setUserTokens(next);
+    try { localStorage.setItem('userTokens', JSON.stringify(next.slice(0, 5000))); } catch {}
+  }
+
+  function highlight(text: string): React.ReactNode {
+    const q = symbol.trim();
+    if (!q) return <>{text}</>;
+    const idx = text.toUpperCase().indexOf(q.toUpperCase());
+    if (idx === -1) return <>{text}</>;
+    return <>{text.slice(0, idx)}<span className="font-semibold text-neutral-900">{text.slice(idx, idx+q.length)}</span>{text.slice(idx+q.length)}</>;
+  }
 
   // Close suggestions on outside click
   useEffect(() => {
@@ -44,41 +82,96 @@ export function PortfolioMain() {
   }, []);
 
   const total = totalValue || 0;
+  // Metrics (live update with current prices)
+  const metrics = useMemo(() => {
+    const enriched = positions.map(p => {
+      const pr = prices[p.id]?.usd || 0; return { symbol: p.symbol, quantity: p.quantity, valueUsd: pr * p.quantity };
+    });
+    return computeMetrics(enriched);
+  }, [positions, prices]);
 
-  function onAdd(e: React.FormEvent) {
+  const riskLabel = useMemo(() => {
+    if (!metrics.totalValue) return '—';
+    if (metrics.largestWeightPct > 60 || metrics.diversificationScore < 30) return 'Risque élevé';
+    if (metrics.largestWeightPct > 40 || metrics.diversificationScore < 55) return 'Risque modéré';
+    return 'Risque faible';
+  }, [metrics]);
+
+  const scoreValue = Math.round(metrics.diversificationScore || 0);
+  const priceMode = (process.env.NEXT_PUBLIC_PRICE_MODE || (process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' ? 'mock' : 'live')) as string;
+  const isMock = priceMode === 'mock';
+
+  async function onAdd(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     const s = symbol.trim().toUpperCase();
-    const q = parseFloat(qty);
-    if (!s || !q || q <= 0) { setError('Entrée invalide'); return; }
-    // Resolve token meta (symbol match) for proper Coingecko id mapping
-    const meta = selectedToken && selectedToken.symbol.toUpperCase() === s
-      ? selectedToken
-      : TOKENS.find(t => t.symbol.toUpperCase() === s);
-    const id = meta ? meta.id : s.toLowerCase();
-    addPosition({ symbol: s, quantity: q, id });
-    setSymbol(''); setQty('');
-    setSelectedToken(null);
-    setShowSuggest(false);
-    refresh();
+    const qn = parseFloat(qty);
+    if (!s || !qn || qn <= 0) { setError('Entrée invalide'); return; }
+    let id: string | null = null;
+    // Priorité: suggestion choisie
+    if (selectedToken && selectedToken.symbol.toUpperCase() === s) {
+      id = selectedToken.id;
+    }
+    // Ensuite: remote (BigQuery) exact symbol
+    if (!id) {
+      const r = remote.find(t => t.symbol.toUpperCase() === s);
+      if (r) id = r.id;
+    }
+    // Ensuite: liste statique fallback
+    if (!id) {
+      const local = TOKENS.find(t => t.symbol.toUpperCase() === s);
+      if (local) id = local.id;
+    }
+    // Si toujours inconnu et remote disponible => ne PAS appeler Coingecko (car table contient déjà tout, peut-être symbol rare)
+    const remoteActive = remote.length > 0;
+    // Si encore inconnu et remote non actif (pas BigQuery) et pas CMC -> résolution Coingecko
+    const priceMode = (process.env.NEXT_PUBLIC_PRICE_MODE || (process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' ? 'mock' : '')) as string;
+    const isCMC = priceMode === 'cmc';
+    if (!id && !isCMC && !remoteActive) {
+      try {
+        const r = await fetch(`/api/resolve-token?symbol=${encodeURIComponent(s)}`);
+        if (r.ok) {
+          const j = await r.json();
+          if (j.found && j.id) id = j.id;
+        }
+      } catch {}
+    }
+    // Fallback: use lowercase symbol
+    if (!id) id = s.toLowerCase();
+    addPosition({ symbol: s, quantity: qn, id });
+    // Ajouter dans userTokens si absent
+    const exists = userTokens.find(t => t.symbol.toUpperCase() === s);
+    if (!exists) {
+      const meta: TokenMeta = { id, symbol: s, name: selectedToken?.name || s };
+      persistUserTokens([meta, ...userTokens].slice(0, 10000));
+    }
+    setSymbol(''); setQty(''); setSelectedToken(null); setShowSuggest(false);
+    // Ne rafraîchit pas les prix (demande utilisateur)
   }
 
   // Remote fetch
   useEffect(() => {
     const q = symbol.trim();
-    if (!q) { setRemote([]); return; }
+    if (!q) { setRemote([]); setRemoteQuery(''); return; }
     const id = setTimeout(async () => {
       try {
         remoteAbort.current?.abort();
         const ctrl = new AbortController();
         remoteAbort.current = ctrl;
-        const res = await fetch(`/api/tokens?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
+        const res = await fetch(`/api/tokens?q=${encodeURIComponent(q)}&limit=35&debug=1`, { signal: ctrl.signal, cache: 'no-store' });
         if (!res.ok) return;
         const json = await res.json();
         const list = (json.tokens || []) as any[];
-        setRemote(list.map(t => ({ id: t.id, symbol: t.symbol?.toUpperCase?.() || t.symbol, name: t.name })));
-      } catch {}
-    }, 160); // debounce
+        // Debug console pour diagnostiquer absence de suggestions
+        if (list.length === 0) {
+          console.debug('[suggestions] vide pour', q, json);
+        }
+        setRemote(list.map(t => ({ id: t.id, symbol: t.symbol?.toUpperCase?.() || t.symbol, name: t.name || t.symbol })));
+        setRemoteQuery(q);
+      } catch (e) {
+        console.debug('[suggestions] fetch erreur', e);
+      }
+    }, 160);
     return () => clearTimeout(id);
   }, [symbol]);
 
@@ -88,7 +181,7 @@ export function PortfolioMain() {
         <div aria-hidden className="pointer-events-none absolute inset-0" />
         <header className="relative z-10 flex flex-col md:flex-row md:items-end gap-4 md:gap-8 justify-between">
           <div>
-            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-neutral-900">Portefeuille</h2>
+            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-neutral-900 flex items-center gap-3">Portefeuille {isMock && (<span className="text-[10px] uppercase tracking-wide bg-neutral-900 text-white px-2 py-1 rounded">Mock</span>)} {!isMock && (<span className="text-[10px] uppercase tracking-wide bg-emerald-600 text-white px-2 py-1 rounded">Live</span>)}</h2>
             <p className="mt-2 text-sm text-neutral-600 max-w-xl">Gère tes positions, valorisation temps réel (batch prix) & poids de chaque actif.</p>
           </div>
           <div className="flex flex-col items-start md:items-end">
@@ -183,11 +276,14 @@ export function PortfolioMain() {
                           setShowSuggest(false);
                         }}
                       >
-                        <span className="font-medium text-neutral-800">{t.symbol}</span>
-                        <span className="text-neutral-500 truncate">{t.name}</span>
+                        <span className="font-medium text-neutral-800">{highlight(t.symbol)}</span>
+                        <span className="text-neutral-500 truncate">{highlight(t.name)}</span>
                       </li>
                     ))}
                   </ul>
+                )}
+                {showSuggest && symbol.trim() && suggestions.length === 0 && (
+                  <div className="absolute z-20 mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-[11px] text-neutral-500">Aucune suggestion</div>
                 )}
               </div>
               <input
@@ -202,9 +298,27 @@ export function PortfolioMain() {
               <button type="submit" className="rounded bg-neutral-900 hover:bg-neutral-800 text-white px-4 py-2 font-medium transition">Ajouter</button>
               {error && <span className="text-red-600 self-center ml-2">{error}</span>}
             </form>
-            <p className="mt-3 text-[11px] text-neutral-500">Tape un symbole (BTC, ETH, SOL...) puis Enter. Sélectionne dans la liste pour mapper correctement l'id Coingecko.</p>
+            <p className="mt-3 text-[11px] text-neutral-500">Tape un symbole (BTC, ETH, SOL...). Si aucune suggestion n'est choisie, le système tente une résolution automatique (Coingecko) sinon utilise le symbole brut.</p>
           </div>
           <div className="md:col-span-2 space-y-5">
+            {/* Score / Risk summary */}
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 text-xs flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-neutral-800">Score diversification</span>
+                <span className="text-neutral-500">{scoreValue}/100</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-600">{riskLabel}</span>
+                <span className="text-neutral-500">Max {metrics.largestWeightPct.toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center justify-between text-neutral-500">
+                <span>Stablecoins</span>
+                <span>{metrics.stableWeightPct.toFixed(1)}%</span>
+              </div>
+              <div className="h-2 rounded bg-neutral-200 overflow-hidden" aria-label="Diversification score barre">
+                <motion.div initial={{ width: 0 }} animate={{ width: scoreValue + '%' }} className="h-full bg-neutral-900" />
+              </div>
+            </div>
             <h3 className="text-sm font-semibold tracking-wide text-neutral-800">Allocation</h3>
             <ul className="space-y-2">
               {positions.map(p => {

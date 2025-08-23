@@ -1,8 +1,12 @@
+import 'server-only'; // Ensure this module is never bundled client-side (uses BigQuery & node deps)
 // Price provider abstraction (offline-first)
 // Permet d'utiliser des prix factices (mock) puis de basculer vers l'API Coingecko plus tard sans changer les composants.
 // Usage: const prices = await getPrices(['bitcoin','ethereum'])
 
-import { fetchSimplePrices } from './coingecko';
+import { fetchSimplePrices, fetchTokenMeta } from './coingecko';
+import { fetchRecentPricesFromBigQuery, insertPricesIntoBigQuery } from './bqPrice';
+import { upsertTokenMeta } from '@/lib/bigquery';
+import { fetchCMCPrices } from './coinmarketcap';
 
 export interface SimplePriceMap { [id: string]: { usd: number; change24h?: number; change7d?: number } }
 
@@ -45,21 +49,48 @@ class CoingeckoPriceProvider implements PriceProvider {
     const cached = priceCache.get(key);
     const now = Date.now();
     if (cached && now - cached.at < TTL_MS) return cached.data;
-
-    const raw = await fetchSimplePrices(ids, vs);
-    const mapped: SimplePriceMap = {};
-    for (const id of Object.keys(raw)) {
-      mapped[id] = { usd: raw[id][vs] };
+    // 1. Try BigQuery cache (recent rows)
+    let mapped: SimplePriceMap = await fetchRecentPricesFromBigQuery(ids).catch(()=> ({}));
+    const missing = ids.filter(i => !mapped[i]);
+    if (missing.length) {
+      const raw = await fetchSimplePrices(missing, vs);
+      for (const id of Object.keys(raw)) {
+        mapped[id] = { usd: raw[id][vs] };
+      }
+      // Fire & forget insert into BigQuery if configured
+      insertPricesIntoBigQuery(Object.fromEntries(missing.filter(i=>mapped[i]).map(i=>[i,mapped[i]]))).catch(()=>{});
+      // Fire & forget token metadata persistence
+      const dataset = process.env.BQ_TOKENS_DATASET;
+      const table = process.env.BQ_TOKENS_TABLE;
+      if (dataset && table) {
+        missing.forEach(async (id) => {
+          const meta = await fetchTokenMeta(id);
+            if (meta && meta.id) {
+              upsertTokenMeta(dataset, table, { ...meta, updated_at: new Date().toISOString() }).catch(()=>{});
+            }
+        });
+      }
     }
     priceCache.set(key, { at: now, data: mapped });
     return mapped;
   }
 }
 
+// --------- COINMARKETCAP PROVIDER ---------
+class CoinMarketCapPriceProvider implements PriceProvider {
+  async getSimplePrices(ids: string[], vs: string = 'usd'): Promise<SimplePriceMap> {
+    if (!ids.length) return {};
+    // For CMC we treat ids as symbols (already stored lowercase). CMC requires uppercase symbols.
+    const symbols = ids.map(i => i.toUpperCase());
+    const data = await fetchCMCPrices(symbols, vs.toUpperCase());
+    return data;
+  }
+}
+
 let _provider: PriceProvider | null = null;
 
 function hasAnyKey() {
-  return !!(process.env.COINGECKO_API_KEY || process.env.CG_KEY);
+  return !!(process.env.COINGECKO_API_KEY || process.env.CG_KEY || process.env.CMC_API_KEY || process.env.COINMARKETCAP_API_KEY);
 }
 
 function coingeckoCallsDisabled() {
@@ -69,8 +100,15 @@ function coingeckoCallsDisabled() {
 
 export function getPriceProvider(): PriceProvider {
   if (_provider) return _provider;
-  const useMock = process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' || !hasAnyKey() || coingeckoCallsDisabled();
-  _provider = useMock ? new MockPriceProvider() : new CoingeckoPriceProvider();
+  const mode = (process.env.PRICE_SOURCE || process.env.NEXT_PUBLIC_PRICE_MODE || '').toLowerCase();
+  const useMock = process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' || (!hasAnyKey()) || coingeckoCallsDisabled();
+  if (useMock) {
+    _provider = new MockPriceProvider();
+  } else if (mode === 'cmc') {
+    _provider = new CoinMarketCapPriceProvider();
+  } else {
+    _provider = new CoingeckoPriceProvider();
+  }
   return _provider;
 }
 

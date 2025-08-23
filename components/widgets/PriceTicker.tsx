@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
 import WatchCard from '@/components/ui/WatchCard';
-import { getPrices, SimplePriceMap } from '@/lib/prices/provider';
 import { useReducedMotion } from 'framer-motion';
 
 interface PriceRow { id: string; label: string; }
@@ -15,8 +14,9 @@ const DEFAULT_IDS: PriceRow[] = [
  * PriceTicker – widget mock/offline pour afficher quelques prix.
  * Basculera automatiquement vers API Coingecko quand une clé ou activation sera disponible.
  */
+interface MiniPrice { usd: number; change24h?: number }
 export function PriceTicker({ ids = DEFAULT_IDS }: { ids?: PriceRow[] }) {
-  const [data, setData] = useState<SimplePriceMap>({});
+  const [data, setData] = useState<Record<string, MiniPrice>>({});
   const [loading, setLoading] = useState(true);
   const prefersReduced = useReducedMotion();
 
@@ -24,7 +24,10 @@ export function PriceTicker({ ids = DEFAULT_IDS }: { ids?: PriceRow[] }) {
     let cancelled = false;
     async function load() {
       try {
-        const prices = await getPrices(ids.map(i => i.id));
+        const url = `/api/prices?ids=${encodeURIComponent(ids.map(i=>i.id).join(','))}&vs=usd`;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) return;
+        const prices = await res.json();
         if (!cancelled) setData(prices);
       } finally {
         if (!cancelled) setLoading(false);

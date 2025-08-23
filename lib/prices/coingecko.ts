@@ -65,3 +65,28 @@ export async function fetchMarketChart(
   });
   return data.prices as [number, number][]; // [timestamp, price]
 }
+
+// Lightweight metadata fetch for a single coin id (no heavy sections)
+export async function fetchTokenMeta(id: string) {
+  try {
+    const { data } = await axios.get(`${BASE_URL}/coins/${id}`, {
+      params: {
+        localization: false,
+        tickers: false,
+        market_data: false,
+        community_data: false,
+        developer_data: false,
+        sparkline: false,
+      },
+      headers: headers(),
+    });
+    return {
+      id: data?.id,
+      symbol: (data?.symbol || '').toUpperCase(),
+      name: data?.name,
+      rank: data?.market_cap_rank ?? null,
+    } as { id: string; symbol: string; name: string; rank: number | null };
+  } catch (e) {
+    return null;
+  }
+}

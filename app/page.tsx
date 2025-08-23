@@ -47,16 +47,7 @@ export default function DashboardPage() {
   <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={5}><ListSignals title="Opportunités" variant="positive" /></motion.div>
     {/* Ligne 2: Risques + autres */}
   <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={6}><ListSignals title="Risques" variant="negative" /></motion.div>
-  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={7}>
-          <Card>
-            <CardHeader>
-              <CardTitle>Score synthétique</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScoreCard summary={{ nav: 0, risk: "—", score: 0 }} />
-            </CardContent>
-          </Card>
-        </motion.div>
+  {/* ScoreCard retiré (intégré dans PortfolioMain) */}
   <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={8}>
           <Card>
             <CardHeader><CardTitle>Valeur du portefeuille</CardTitle></CardHeader>
