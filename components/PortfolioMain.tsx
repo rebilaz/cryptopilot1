@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { motion } from 'framer-motion';
 import { searchTokens, TOKENS, type TokenMeta } from '@/lib/prices/tokens';
@@ -18,34 +19,30 @@ export function PortfolioMain() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const [selectedToken, setSelectedToken] = useState<TokenMeta | null>(null);
-  const [remote, setRemote] = useState<TokenMeta[]>([]); // suggestions distantes déjà filtrées/rankées par l'API
-  const [remoteQuery, setRemoteQuery] = useState<string>('');
+  const [results, setResults] = useState<TokenMeta[]>([]); // résultats actuels de l'autocomplete
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [noResults, setNoResults] = useState(false);
   const [userTokens, setUserTokens] = useState<TokenMeta[]>([]); // tokens ajoutés manuellement (persist localStorage)
   const remoteAbort = useRef<AbortController | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const lastQueryRef = useRef<string>('');
+  const cacheRef = useRef<Map<string, { ts: number; data: TokenMeta[] }>>(new Map());
+  const suggestionListRef = useRef<HTMLUListElement | null>(null);
   const comboRef = useRef<HTMLDivElement | null>(null);
+  const fetchSeqRef = useRef(0); // requestId séquence
+  const [portalPos, setPortalPos] = useState<{ left:number; top:number; width:number } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Suggestions finales: résultats réseau (si query >=2) + tokens utilisateur additionnels
   const suggestions = useMemo(() => {
     const q = symbol.trim();
     if (!q) return [] as TokenMeta[];
-    const qLower = q.toLowerCase();
-    // Si la requête distante correspond à la saisie actuelle, utilise directement remote (déjà ranké + limité par l'API)
-    if (remote.length && remoteQuery === q) {
-      // merge userTokens (prend ceux qui matchent mais absents)
-      const merged = [...remote];
-      userTokens.forEach(u => {
-        if ((u.symbol.toLowerCase().startsWith(qLower) || u.name.toLowerCase().includes(qLower) || u.id.toLowerCase().startsWith(qLower)) && !merged.find(m => m.symbol.toUpperCase() === u.symbol.toUpperCase())) {
-          merged.push(u);
-        }
-      });
-      return merged;
-    }
-    // Fallback local
-    const local = searchTokens(q, 40);
-    const user = userTokens.filter(t => t.symbol.toLowerCase().startsWith(qLower) || t.name.toLowerCase().includes(qLower) || t.id.toLowerCase().startsWith(qLower));
-    const merged = [...local];
-    user.forEach(r => { if (!merged.find(m => m.symbol.toUpperCase() === r.symbol.toUpperCase())) merged.push(r); });
-    return merged.slice(0, 40);
-  }, [symbol, remote, remoteQuery, userTokens]);
+    const base = q.length >= 2 ? results : [];
+    const lower = q.toLowerCase();
+    const extra = userTokens.filter(t => (t.symbol.toLowerCase().startsWith(lower) || t.name.toLowerCase().includes(lower)) && !base.find(b => b.symbol.toUpperCase() === t.symbol.toUpperCase()));
+    return [...base, ...extra].slice(0, 50);
+  }, [symbol, results, userTokens]);
   // Charger userTokens depuis localStorage
   useEffect(() => {
     try {
@@ -65,21 +62,46 @@ export function PortfolioMain() {
   function highlight(text: string): React.ReactNode {
     const q = symbol.trim();
     if (!q) return <>{text}</>;
-    const idx = text.toUpperCase().indexOf(q.toUpperCase());
-    if (idx === -1) return <>{text}</>;
-    return <>{text.slice(0, idx)}<span className="font-semibold text-neutral-900">{text.slice(idx, idx+q.length)}</span>{text.slice(idx+q.length)}</>;
+    const regex = new RegExp(q.replace(/[-/\\^$*+?.()|[\]{}]/g, r => '\\' + r), 'ig');
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0; let m: RegExpExecArray | null;
+    while ((m = regex.exec(text)) !== null) {
+      if (m.index > lastIndex) parts.push(text.slice(lastIndex, m.index));
+  parts.push(<mark key={m.index} className="bg-yellow-200/70 dark:bg-yellow-300/20 px-0.5 rounded">{m[0]}</mark>);
+      lastIndex = m.index + m[0].length;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    return <>{parts}</>;
   }
 
   // Close suggestions on outside click
   useEffect(() => {
     function onDoc(e: MouseEvent) {
-      if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (comboRef.current && comboRef.current.contains(target)) return;
+      if (suggestionListRef.current && suggestionListRef.current.contains(target)) return;
+      if (comboRef.current && !comboRef.current.contains(target)) {
         setShowSuggest(false);
       }
     }
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
+
+  // Recalcule la position du panel (portal) lorsqu'ouvert / scroll / resize / query change
+  useEffect(() => {
+    if (!showSuggest) return;
+    const compute = () => {
+      if (!inputRef.current) return;
+      const r = inputRef.current.getBoundingClientRect();
+      // position:fixed => utiliser coordonnées viewport directement (pas de scrollY)
+      setPortalPos({ left: r.left, top: r.bottom, width: r.width });
+    };
+    compute();
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => { window.removeEventListener('scroll', compute, true); window.removeEventListener('resize', compute); };
+  }, [showSuggest, symbol, results]);
 
   const total = totalValue || 0;
   // Metrics (live update with current prices)
@@ -108,36 +130,22 @@ export function PortfolioMain() {
     const qn = parseFloat(qty);
     if (!s || !qn || qn <= 0) { setError('Entrée invalide'); return; }
     let id: string | null = null;
-    // Priorité: suggestion choisie
-    if (selectedToken && selectedToken.symbol.toUpperCase() === s) {
-      id = selectedToken.id;
-    }
-    // Ensuite: remote (BigQuery) exact symbol
+    if (selectedToken && selectedToken.symbol.toUpperCase() === s) id = selectedToken.id;
     if (!id) {
-      const r = remote.find(t => t.symbol.toUpperCase() === s);
-      if (r) id = r.id;
-    }
-    // Ensuite: liste statique fallback
-    if (!id) {
+      // local static fallback si symbole connu dans TOKENS
       const local = TOKENS.find(t => t.symbol.toUpperCase() === s);
       if (local) id = local.id;
     }
-    // Si toujours inconnu et remote disponible => ne PAS appeler Coingecko (car table contient déjà tout, peut-être symbol rare)
-    const remoteActive = remote.length > 0;
-    // Si encore inconnu et remote non actif (pas BigQuery) et pas CMC -> résolution Coingecko
-    const priceMode = (process.env.NEXT_PUBLIC_PRICE_MODE || (process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' ? 'mock' : '')) as string;
-    const isCMC = priceMode === 'cmc';
-    if (!id && !isCMC && !remoteActive) {
-      try {
-        const r = await fetch(`/api/resolve-token?symbol=${encodeURIComponent(s)}`);
-        if (r.ok) {
-          const j = await r.json();
-          if (j.found && j.id) id = j.id;
-        }
-      } catch {}
+    const priceSource = (process.env.NEXT_PUBLIC_PRICE_SOURCE || process.env.NEXT_PUBLIC_PRICE_MODE || '').toLowerCase();
+    const isCMC = priceSource === 'cmc';
+    if (!id) {
+      if (isCMC) {
+        id = s.toLowerCase(); // autorisé
+      } else {
+        setError('Sélectionne un token dans la liste (id requis)');
+        return;
+      }
     }
-    // Fallback: use lowercase symbol
-    if (!id) id = s.toLowerCase();
     addPosition({ symbol: s, quantity: qn, id });
     // Ajouter dans userTokens si absent
     const exists = userTokens.find(t => t.symbol.toUpperCase() === s);
@@ -150,30 +158,118 @@ export function PortfolioMain() {
   }
 
   // Remote fetch
-  useEffect(() => {
-    const q = symbol.trim();
-    if (!q) { setRemote([]); setRemoteQuery(''); return; }
-    const id = setTimeout(async () => {
-      try {
-        remoteAbort.current?.abort();
-        const ctrl = new AbortController();
-        remoteAbort.current = ctrl;
-        const res = await fetch(`/api/tokens?q=${encodeURIComponent(q)}&limit=35&debug=1`, { signal: ctrl.signal, cache: 'no-store' });
-        if (!res.ok) return;
-        const json = await res.json();
-        const list = (json.tokens || []) as any[];
-        // Debug console pour diagnostiquer absence de suggestions
-        if (list.length === 0) {
-          console.debug('[suggestions] vide pour', q, json);
-        }
-        setRemote(list.map(t => ({ id: t.id, symbol: t.symbol?.toUpperCase?.() || t.symbol, name: t.name || t.symbol })));
-        setRemoteQuery(q);
-      } catch (e) {
-        console.debug('[suggestions] fetch erreur', e);
+  // Autocomplete fetch (debounce 200ms) vers /api/tokens/search
+  const normalizeQuery = (input: string) => input
+    .normalize('NFD')
+    .replace(/\p{Diacritic}+?/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  const normalizeForMatch = (s: string) => s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}+?/gu, '')
+    .replace(/\s+/g,' ')
+    .trim()
+    .toLowerCase();
+
+  const rankResults = (arr: TokenMeta[], rawQ: string) => {
+    const q = normalizeForMatch(rawQ);
+    return [...arr].sort((a,b) => {
+      const as = normalizeForMatch(a.symbol || '');
+      const bs = normalizeForMatch(b.symbol || '');
+      const an = normalizeForMatch(a.name || '');
+      const bn = normalizeForMatch(b.name || '');
+      const aScore = as === q ? 3 : (as.startsWith(q) ? 2 : (an.includes(q) ? 1 : 0));
+      const bScore = bs === q ? 3 : (bs.startsWith(q) ? 2 : (bn.includes(q) ? 1 : 0));
+      if (bScore !== aScore) return bScore - aScore;
+      const ar = (a as any).rank ?? (a as any).market_cap_rank ?? Number.MAX_SAFE_INTEGER;
+      const br = (b as any).rank ?? (b as any).market_cap_rank ?? Number.MAX_SAFE_INTEGER;
+      if (ar !== br) return ar - br;
+      return as.localeCompare(bs);
+    }).slice(0,50);
+  };
+
+  const fetchPass = async (qNorm: string, pass: 1 | 2, limit: number, signal: AbortSignal, requestId: number): Promise<void> => {
+    const t0 = performance.now();
+    const res = await fetch(`/api/tokens/search?q=${encodeURIComponent(qNorm)}&limit=${limit}`, { signal });
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const json = await res.json();
+  const rawList = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : Array.isArray(json?.results) ? json.results : [];
+  if (process.env.NODE_ENV !== 'production') console.debug('autocomplete payload', Array.isArray(json), rawList.length, Object.keys(rawList[0]||{}));
+  const list: TokenMeta[] = rawList.map((t: any) => ({ id: t.id, symbol: (t.symbol||'').toUpperCase(), name: t.name, rank: t.rank }));
+    // Appliquer seulement si c'est la dernière requête encore active
+    if (requestId !== fetchSeqRef.current) return;
+    const ranked = rankResults(list, qNorm);
+  if (list.length > 0) { setShowSuggest(true); setNoResults(false); }
+    if (process.env.NODE_ENV !== 'production') console.debug('suggest', { q: qNorm, count: ranked.length, keys: Object.keys(ranked[0]||{}) });
+    const ms = Math.round(performance.now() - t0);
+    if (process.env.NODE_ENV !== 'production') console.debug('[autocomplete]', { q: qNorm, pass, limit, resultsCount: ranked.length, ms });
+    setResults(ranked);
+    setNoResults(ranked.length === 0);
+  };
+
+  const triggerSearch = useCallback((raw: string) => {
+    const qNorm = normalizeQuery(raw);
+    if (qNorm.length < 2) { setResults([]); setNoResults(false); setSuggestError(null); lastQueryRef.current=''; return; }
+    if (lastQueryRef.current === qNorm) return; // same active query
+    lastQueryRef.current = qNorm;
+    setSelectedToken(null);
+    const firstKey = `${qNorm}|25`;
+    const now = Date.now();
+    const firstCache = cacheRef.current.get(firstKey);
+    const validFirstCache = firstCache && (now - firstCache.ts) < (firstCache.data.length ? 30_000 : 5_000);
+    const trySecond = async () => {
+      if (qNorm.length < 3) { setNoResults(true); return; }
+      const secondKey = `${qNorm}|100`;
+      const secondCache = cacheRef.current.get(secondKey);
+      const validSecondCache = secondCache && (now - secondCache.ts) < (secondCache.data.length ? 30_000 : 5_000);
+      if (validSecondCache) {
+        const ranked = rankResults(secondCache.data, qNorm); setResults(ranked); setNoResults(ranked.length === 0); return;
       }
-    }, 160);
-    return () => clearTimeout(id);
-  }, [symbol]);
+      remoteAbort.current?.abort();
+      const ctrl2 = new AbortController();
+      remoteAbort.current = ctrl2;
+      setLoadingSuggest(true);
+      try {
+        const reqId = ++fetchSeqRef.current;
+        await fetchPass(qNorm, 2, 100, ctrl2.signal, reqId);
+        if (reqId === fetchSeqRef.current) {
+          // store raw (unranked) we only have ranked; keep same
+          cacheRef.current.set(secondKey, { ts: Date.now(), data: results });
+        }
+      } catch (e:any) {
+        if (e.name !== 'AbortError') { setSuggestError(e.message || 'Erreur'); }
+      } finally { setLoadingSuggest(false); }
+    };
+    if (validFirstCache) {
+      const ranked = rankResults(firstCache!.data, qNorm); setResults(ranked); setNoResults(ranked.length === 0);
+      if (ranked.length === 0) void trySecond();
+      return;
+    }
+    remoteAbort.current?.abort();
+    const ctrl = new AbortController();
+    remoteAbort.current = ctrl;
+    setLoadingSuggest(true); setSuggestError(null); setNoResults(false);
+    const reqId = ++fetchSeqRef.current;
+    fetchPass(qNorm, 1, 25, ctrl.signal, reqId)
+      .then(() => {
+        if (reqId !== fetchSeqRef.current) return;
+        const current = results; // already ranked & set by fetchPass
+        cacheRef.current.set(firstKey, { ts: Date.now(), data: current });
+        if (current.length === 0) void trySecond();
+      })
+      .catch(e => { if (e.name !== 'AbortError') { setSuggestError(e.message || 'Erreur'); setResults([]); setNoResults(false); } })
+      .finally(() => { setLoadingSuggest(false); });
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  const q = symbol;
+    if (!q) { setResults([]); setNoResults(false); setSuggestError(null); lastQueryRef.current = ''; return; }
+    debounceRef.current = setTimeout(() => triggerSearch(q), 200);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [symbol, triggerSearch]);
 
   return (
     <section aria-label="Portefeuille" className="mt-6 md:mt-8 max-w-6xl mx-auto px-5">
@@ -235,18 +331,26 @@ export function PortfolioMain() {
                   placeholder="SYMBOL"
                   value={symbol}
                   onFocus={() => setShowSuggest(true)}
-                  onChange={e => { setSymbol(e.target.value); setShowSuggest(true); setSelectedToken(null); }}
+                  ref={inputRef}
+                  onChange={e => { setSymbol(e.target.value); setShowSuggest(true); if (selectedToken) setSelectedToken(null); }}
                   onKeyDown={e => {
-                    if (!showSuggest || !suggestions.length) return;
-                    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => (i + 1) % suggestions.length); }
-                    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => (i - 1 + suggestions.length) % suggestions.length); }
+                    if (!showSuggest) return;
+                    if (e.key === 'ArrowDown' && suggestions.length) { e.preventDefault(); setActiveIdx(i => (i + 1) % suggestions.length); }
+                    else if (e.key === 'ArrowUp' && suggestions.length) { e.preventDefault(); setActiveIdx(i => (i - 1 + suggestions.length) % suggestions.length); }
                     else if (e.key === 'Enter') {
-                      const pick = suggestions[activeIdx];
-                      if (pick) {
-                        e.preventDefault();
-                        setSymbol(pick.symbol.toUpperCase());
-                        setSelectedToken(pick);
-                        setShowSuggest(false);
+                      if (suggestions.length) {
+                        const pick = suggestions[activeIdx];
+                        if (pick) {
+                          e.preventDefault();
+                          setSymbol(pick.symbol.toUpperCase());
+                          setSelectedToken(pick);
+                          setShowSuggest(false);
+                        }
+                      }
+                    } else if (e.key === 'Tab') {
+                      if (showSuggest && suggestions.length) {
+                        const pick = suggestions[activeIdx];
+                        if (pick) { setSymbol(pick.symbol.toUpperCase()); setSelectedToken(pick); }
                       }
                     } else if (e.key === 'Escape') { setShowSuggest(false); }
                   }}
@@ -254,37 +358,89 @@ export function PortfolioMain() {
                   aria-label="Symbole"
                   role="combobox"
                   aria-autocomplete="list"
-                  aria-expanded={showSuggest && suggestions.length ? 'true' : 'false'}
+                  aria-expanded={showSuggest ? 'true' : 'false'}
                   aria-controls="symbol-suggestions"
+                  aria-activedescendant={showSuggest && suggestions.length ? `option-${activeIdx}` : undefined}
                 />
-                {showSuggest && suggestions.length > 0 && (
-                  <ul
-                    id="symbol-suggestions"
-                    role="listbox"
-                    className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded border border-neutral-300 bg-white shadow-sm"
-                  >
-                    {suggestions.map((t, i) => (
-                      <li
-                        key={t.id}
-                        role="option"
-                        aria-selected={i === activeIdx}
-                        className={`px-3 py-1.5 text-[11px] flex justify-between gap-2 cursor-pointer hover:bg-neutral-100 ${i===activeIdx ? 'bg-neutral-100' : ''}`}
-                        onMouseDown={(e) => { // use onMouseDown to prevent blur before click
-                          e.preventDefault();
-                          setSymbol(t.symbol.toUpperCase());
-                          setSelectedToken(t);
-                          setShowSuggest(false);
-                        }}
-                      >
-                        <span className="font-medium text-neutral-800">{highlight(t.symbol)}</span>
-                        <span className="text-neutral-500 truncate">{highlight(t.name)}</span>
-                      </li>
-                    ))}
-                  </ul>
+                {process.env.NODE_ENV !== 'production' && suggestions.length > 0 && showSuggest && (
+                  <span className="absolute top-1 right-2 text-[10px] px-1 rounded bg-neutral-900 text-white">{suggestions.length}</span>
                 )}
-                {showSuggest && symbol.trim() && suggestions.length === 0 && (
-                  <div className="absolute z-20 mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-[11px] text-neutral-500">Aucune suggestion</div>
-                )}
+                {showSuggest && portalPos && createPortal((() => {
+                  const qLen = symbol.trim().length;
+                  const panelCommon = {
+                    position: 'fixed' as const,
+                    top: portalPos.top,
+                    left: portalPos.left,
+                    width: portalPos.width
+                  };
+                  const panelClass = 'z-[2147483647] max-h-72 overflow-auto rounded-xl shadow-xl border border-neutral-300 bg-white ring-1 ring-black/10 text-neutral-900';
+                  if (qLen < 2) {
+                    return (
+                      <div id="symbol-suggestions" role="listbox" style={panelCommon} className={panelClass}>
+                        <div className="px-3 py-2 text-[11px] text-neutral-600">Saisir 2 lettres min.</div>
+                      </div>
+                    );
+                  }
+                  if (loadingSuggest) {
+                    return (
+                      <div id="symbol-suggestions" role="listbox" style={panelCommon} className={panelClass}>
+                        <div className="px-3 py-2 text-[11px] flex items-center gap-2 text-neutral-600">
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900"></span>
+                          Chargement…
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (suggestError) {
+                    return (
+                      <div id="symbol-suggestions" role="listbox" style={panelCommon} className={panelClass}>
+                        <div className="px-3 py-2 text-[11px] text-red-600">Erreur: {suggestError}</div>
+                      </div>
+                    );
+                  }
+                  if (noResults) {
+                    return (
+                      <div id="symbol-suggestions" role="listbox" style={panelCommon} className={panelClass}>
+                        <div className="px-3 py-2 text-[11px] text-neutral-600">Aucune suggestion</div>
+                      </div>
+                    );
+                  }
+                  if (!suggestions.length) return null;
+                  return (
+                    <ul
+                      id="symbol-suggestions"
+                      role="listbox"
+                      ref={suggestionListRef}
+                      style={panelCommon}
+                      className={panelClass}
+                    >
+                      {suggestions.map((t, i) => {
+                        const active = i === activeIdx;
+                        const selected = selectedToken?.id === t.id;
+                        return (
+                          <li
+                            key={t.id}
+                            id={`option-${i}`}
+                            role="option"
+                            aria-selected={active}
+                            data-active={active || undefined}
+                            className={`px-3 min-h-10 py-2 text-sm flex items-center gap-2 cursor-pointer hover:bg-neutral-100 ${active ? 'bg-neutral-100 data-[active=true]:bg-neutral-100' : ''}`}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setSymbol(t.symbol.toUpperCase());
+                              setSelectedToken(t);
+                              setShowSuggest(false);
+                            }}
+                          >
+                            <span className="font-semibold text-neutral-900 truncate max-w-[40%]">{highlight(t.symbol)}</span>
+                            <span className="text-neutral-900 truncate flex-1">— {highlight(t.name)}</span>
+                            {selected && <span className="text-emerald-600 text-xs ml-2">✓</span>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })(), document.body)}
               </div>
               <input
                 placeholder="Qté"

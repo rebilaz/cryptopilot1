@@ -66,6 +66,7 @@ export async function GET(req: NextRequest) {
   const force = searchParams.get('refresh') === '1';
   const limit = Math.min(parseInt(searchParams.get('limit') || '25', 10) || 25, 100);
   const useBigQuery = process.env.BQ_TOKENS_DATASET && process.env.BQ_TOKENS_TABLE;
+  const wantLive = searchParams.get('live') === '1';
 
   try {
   if (force || !cache || Date.now() - cache.ts > TTL_MS) {
@@ -118,6 +119,26 @@ export async function GET(req: NextRequest) {
       if (ranked.length < Math.min(5, limit)) {
         const fuzzyMatches = list.filter((t: any) => (t.symbol || '').toLowerCase().includes(q) || (t.name || '').toLowerCase().includes(q));
         ranked = dedupeAndRank([...ranked, ...fuzzyMatches], q, limit);
+      }
+      // Live Coingecko fallback (only if BigQuery absent or failed and ranking empty) to couvrir "tous les tokens" en local
+      if ((wantLive || !useBigQuery) && ranked.length === 0 && q.length >= 2) {
+        try {
+          const key = process.env.COINGECKO_API_KEY || process.env.CG_KEY;
+          const headers: Record<string,string> = { 'Accept': 'application/json' };
+            if (key) headers['x-cg-pro-api-key'] = key;
+          const r = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(q)}`, { headers, cache: 'no-store' });
+          if (r.ok) {
+            const j: any = await r.json();
+            const coins: any[] = j.coins || [];
+            ranked = coins.slice(0, limit).map(c => ({ id: c.id, symbol: (c.symbol||'').toUpperCase(), name: c.name, rank: c.market_cap_rank || null }));
+            if (ranked.length) {
+              queryCache[q] = { ts: Date.now(), data: ranked };
+              return new Response(JSON.stringify({ tokens: ranked, source: 'coingecko_search' }), { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=30' } });
+            }
+          }
+        } catch (e) {
+          console.warn('[tokens] live search fallback failed', (e as any)?.message || e);
+        }
       }
       queryCache[q] = { ts: Date.now(), data: ranked };
       const debug = searchParams.get('debug') === '1';
