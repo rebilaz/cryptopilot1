@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
+import { AuthButtons } from '@/components/auth/AuthButtons';
 import { motion } from "framer-motion";
 
 export function Header() {
@@ -23,6 +24,7 @@ export function Header() {
             <Link href="/progression" className="hover:text-black transition-colors">Progression</Link>
             <Link href="/challenges" className="hover:text-black transition-colors">Challenges</Link>
           </nav>
+          <AuthButtons />
           <ThemeToggle />
         </div>
       </div>

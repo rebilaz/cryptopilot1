@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TOKENS } from '@/lib/prices/tokens';
 
 export interface PortfolioPosition {
   id: string;          // coingecko id (ex: bitcoin)
@@ -55,7 +56,26 @@ export function usePortfolio(defaults: PortfolioPosition[] = []): PortfolioState
   const [loading, setLoading] = useState(false);
   const lastFetchRef = useRef<number>(0);
 
-  const ids = useMemo(() => positions.map(p => p.id || p.symbol.toLowerCase()).filter(Boolean), [positions]);
+  // Liste d'ids (coingecko) construite dynamiquement depuis les positions avec fallback symbol->meta.id
+  const ids = useMemo(() => {
+    const out: string[] = [];
+    for (const p of positions) {
+      const baseId = (p.id || (p as any).assetId || p.symbol?.toLowerCase?.() || '').toString().trim();
+      if (baseId) out.push(baseId);
+      // Mapping via TOKENS si baseId semble être juste un symbol et diffère d'un id connu.
+      const sym = p.symbol?.toUpperCase?.();
+      if (sym) {
+        const meta = TOKENS.find(t => t.symbol.toUpperCase() === sym);
+        if (meta) out.push(meta.id);
+      }
+    }
+    // Déduplication & filtre vide
+    const dedup = Array.from(new Set(out.filter(Boolean)));
+    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      console.log('[prices] ids:', dedup);
+    }
+    return dedup;
+  }, [positions]);
 
   const refresh = useCallback(async () => {
     const now = Date.now();

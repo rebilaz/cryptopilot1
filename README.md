@@ -150,6 +150,52 @@ Il crée (si absents):
 
 Ensuite tu peux lancer une ingestion de prix puis vérifier dans la console BigQuery.
 
+## BigQuery – Journal des transactions portefeuille (mutations)
+
+Chaque mutation (add_position, update_quantity, remove_position, sell_percent, rebalance, diversify) est envoyée en append-only dans une table BigQuery si `BIGQUERY_LOGGING_ENABLED=true`.
+
+### Variables d'environnement supplémentaires
+```
+BIGQUERY_LOGGING_ENABLED=true
+BIGQUERY_PROJECT_ID=starlit-verve-458814-u9
+BIGQUERY_DATASET=projectscanner
+BIGQUERY_TABLE=portfolio_transactions
+```
+
+Authentification locale SDK:
+```
+gcloud auth application-default login
+```
+Ou fournir un Service Account JSON via la variable standard:
+```
+GOOGLE_APPLICATION_CREDENTIALS=/path/sa-key.json
+```
+
+### Schéma créé automatiquement
+```
+userId STRING,
+portfolioId STRING,
+action STRING,
+symbol STRING,
+assetId STRING,
+delta FLOAT64,
+beforeAmt FLOAT64,
+afterAmt FLOAT64,
+price FLOAT64,
+meta JSON,
+source STRING,
+createdAt TIMESTAMP
+```
+
+Le code crée dataset/table si absents (partition journalière). Les insertions sont best-effort: échec BigQuery n'interrompt pas la mutation applicative.
+
+Endpoint de lecture (debug):
+```
+GET /api/me/transactions?limit=50
+```
+Retour: `{ ok:true, transactions:[ ... ] }`.
+
+
 
 ## Source de prix CoinMarketCap (optionnel)
 Pour autoriser n'importe quel symbole CoinMarketCap sans maintenir une liste d'ids Coingecko:
@@ -163,5 +209,19 @@ Fallback ordre:
 1. Mock (si `NEXT_PUBLIC_USE_MOCK_PRICES=true` ou aucune clé ou `DISABLE_COINGECKO=true`).
 2. CoinMarketCap si `PRICE_SOURCE=cmc`.
 3. Coingecko sinon.
+
+## CoinGecko (clé PRO vs clé demo)
+La route `/api/prices` utilise l'API `/simple/price` de CoinGecko.
+
+Variables pertinentes:
+```
+COINGECKO_API_BASE=https://api.coingecko.com/api/v3
+COINGECKO_API_KEY=   # si fourni => header x-cg-pro-api-key
+```
+Fallback si `COINGECKO_API_KEY` est vide:
+```
+header: x-cg-demo-api-key: CG-9be1b4b8-e3b1-4f9b-8d9f-4f3b78d5
+```
+Le cache mémoire serveur (TTL 5 min) évite une surcharge et SWR côté client rafraîchit toutes les 5 minutes.
 
 

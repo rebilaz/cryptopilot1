@@ -4,8 +4,14 @@ import { createPortal } from 'react-dom';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { motion } from 'framer-motion';
 import { searchTokens, TOKENS, type TokenMeta } from '@/lib/prices/tokens';
+import { usePrices } from '@/lib/hooks/usePrices';
 import { computeMetrics } from '@/lib/portfolio/metrics';
+import { normalizeAsset } from '@/lib/prices/normalizeAsset';
+import { usePortfolioAutoRefresh } from '@/lib/hooks/usePortfolioAutoRefresh';
+import { useSession } from 'next-auth/react';
+import { usePortfolioSync } from '@/lib/hooks/usePortfolioSync';
 import PortfolioChat from './PortfolioChat';
+import TransactionsHistory from './TransactionsHistory';
 
 export function PortfolioMain() {
   const { positions, prices, totalValue, addPosition, updateQuantity, remove, refresh, loading } = usePortfolio([
@@ -33,6 +39,60 @@ export function PortfolioMain() {
   const fetchSeqRef = useRef(0); // requestId séquence
   const [portalPos, setPortalPos] = useState<{ left:number; top:number; width:number } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const { data: session } = useSession();
+  const sync = usePortfolioSync();
+  const rawEffective = session ? sync.positions.map(p => ({ id: p.assetId, symbol: p.symbol, quantity: p.amount, origId: p.id })) : positions;
+  const effectivePositions = useMemo(() => {
+    const map = new Map<string, { id: string; symbol: string; quantity: number; origId?: string }>();
+    for (const p of rawEffective as any[]) {
+      const canonicalId = normalizeAsset(p.id || p.assetId || p.symbol || '');
+      const qty = p.quantity ?? p.amount ?? 0;
+      const meta = TOKENS.find(t => t.id === canonicalId);
+      const displaySymbol = (meta?.symbol || p.symbol || canonicalId).toUpperCase();
+      const existing = map.get(canonicalId);
+      if (existing) {
+        existing.quantity += qty;
+        existing.origId = p.origId || existing.origId;
+      } else {
+        map.set(canonicalId, { id: canonicalId, symbol: displaySymbol, quantity: qty, origId: p.origId });
+      }
+    }
+    return Array.from(map.values());
+  }, [rawEffective, sync.version]);
+  // Build dynamic price ids set (server sync or demo positions)
+  const priceInputs = useMemo(() => {
+    return (effectivePositions as any[]).map(p => ({ assetId: p.id || p.assetId, symbol: p.symbol }));
+  }, [effectivePositions]);
+  useEffect(() => { console.log('[ui] price inputs', priceInputs); }, [priceInputs]);
+  const { prices: livePrices, unknown: unknownPrices } = usePrices(priceInputs, 'usd');
+  const total = useMemo(() => effectivePositions.reduce((acc, p: any) => {
+    const baseId = p.id || p.assetId || p.symbol.toLowerCase();
+    let pr = livePrices?.[baseId]?.usd;
+    if (pr == null && p.symbol) {
+      const meta = TOKENS.find(t => t.symbol.toUpperCase() === (p.symbol||'').toUpperCase());
+      if (meta) pr = livePrices?.[meta.id]?.usd;
+    }
+    const qty = p.quantity ?? p.amount ?? 0;
+    return acc + (pr ? pr * qty : 0);
+  }, 0), [effectivePositions, livePrices]);
+
+  // Metrics (diversification, concentration, etc.)
+  const metrics = useMemo(() => {
+    const metricPositions = effectivePositions.map((p: any) => {
+      const baseId = p.id || p.assetId || p.symbol.toLowerCase();
+      const qty = p.quantity ?? p.amount ?? 0;
+      let pr = livePrices?.[baseId]?.usd || 0;
+      if (!pr && p.symbol) {
+        const meta = TOKENS.find(t => t.symbol.toUpperCase() === (p.symbol||'').toUpperCase());
+        if (meta) pr = livePrices?.[meta.id]?.usd || pr;
+      }
+      return { symbol: p.symbol, quantity: qty, valueUsd: pr * qty };
+    });
+    return computeMetrics(metricPositions);
+  }, [effectivePositions, livePrices]);
+  const scoreValue = Math.round(metrics.diversificationScore);
+  const riskLabel = metrics.largestWeightPct > 60 ? 'Risque élevé' : metrics.largestWeightPct > 40 ? 'Risque modéré' : metrics.largestWeightPct > 25 ? 'Équilibré' : 'Diversifié';
+  const isMock = !session; // simple flag: non authentifié => mode démo
 
   // Suggestions finales: résultats réseau (si query >=2) + tokens utilisateur additionnels
   const suggestions = useMemo(() => {
@@ -67,63 +127,15 @@ export function PortfolioMain() {
     let lastIndex = 0; let m: RegExpExecArray | null;
     while ((m = regex.exec(text)) !== null) {
       if (m.index > lastIndex) parts.push(text.slice(lastIndex, m.index));
-  parts.push(<mark key={m.index} className="bg-yellow-200/70 dark:bg-yellow-300/20 px-0.5 rounded">{m[0]}</mark>);
+      parts.push(<mark key={m.index} className="bg-yellow-200/70 dark:bg-yellow-300/20 px-0.5 rounded">{m[0]}</mark>);
       lastIndex = m.index + m[0].length;
     }
     if (lastIndex < text.length) parts.push(text.slice(lastIndex));
     return <>{parts}</>;
   }
 
-  // Close suggestions on outside click
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      const target = e.target as Node;
-      if (comboRef.current && comboRef.current.contains(target)) return;
-      if (suggestionListRef.current && suggestionListRef.current.contains(target)) return;
-      if (comboRef.current && !comboRef.current.contains(target)) {
-        setShowSuggest(false);
-      }
-    }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-
-  // Recalcule la position du panel (portal) lorsqu'ouvert / scroll / resize / query change
-  useEffect(() => {
-    if (!showSuggest) return;
-    const compute = () => {
-      if (!inputRef.current) return;
-      const r = inputRef.current.getBoundingClientRect();
-      // position:fixed => utiliser coordonnées viewport directement (pas de scrollY)
-      setPortalPos({ left: r.left, top: r.bottom, width: r.width });
-    };
-    compute();
-    window.addEventListener('scroll', compute, true);
-    window.addEventListener('resize', compute);
-    return () => { window.removeEventListener('scroll', compute, true); window.removeEventListener('resize', compute); };
-  }, [showSuggest, symbol, results]);
-
-  const total = totalValue || 0;
-  // Metrics (live update with current prices)
-  const metrics = useMemo(() => {
-    const enriched = positions.map(p => {
-      const pr = prices[p.id]?.usd || 0; return { symbol: p.symbol, quantity: p.quantity, valueUsd: pr * p.quantity };
-    });
-    return computeMetrics(enriched);
-  }, [positions, prices]);
-
-  const riskLabel = useMemo(() => {
-    if (!metrics.totalValue) return '—';
-    if (metrics.largestWeightPct > 60 || metrics.diversificationScore < 30) return 'Risque élevé';
-    if (metrics.largestWeightPct > 40 || metrics.diversificationScore < 55) return 'Risque modéré';
-    return 'Risque faible';
-  }, [metrics]);
-
-  const scoreValue = Math.round(metrics.diversificationScore || 0);
-  const priceMode = (process.env.NEXT_PUBLIC_PRICE_MODE || (process.env.NEXT_PUBLIC_USE_MOCK_PRICES === 'true' ? 'mock' : 'live')) as string;
-  const isMock = priceMode === 'mock';
-
-  async function onAdd(e: React.FormEvent) {
+  // Form submit handler (add position)
+  const onAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     const s = symbol.trim().toUpperCase();
@@ -132,30 +144,23 @@ export function PortfolioMain() {
     let id: string | null = null;
     if (selectedToken && selectedToken.symbol.toUpperCase() === s) id = selectedToken.id;
     if (!id) {
-      // local static fallback si symbole connu dans TOKENS
       const local = TOKENS.find(t => t.symbol.toUpperCase() === s);
       if (local) id = local.id;
     }
     const priceSource = (process.env.NEXT_PUBLIC_PRICE_SOURCE || process.env.NEXT_PUBLIC_PRICE_MODE || '').toLowerCase();
     const isCMC = priceSource === 'cmc';
     if (!id) {
-      if (isCMC) {
-        id = s.toLowerCase(); // autorisé
-      } else {
-        setError('Sélectionne un token dans la liste (id requis)');
-        return;
-      }
+      if (isCMC) id = s.toLowerCase(); else { setError('Sélectionne un token dans la liste (id requis)'); return; }
     }
-    addPosition({ symbol: s, quantity: qn, id });
-    // Ajouter dans userTokens si absent
+    if (session) {
+      await sync.add({ assetId: id, symbol: s, amount: qn, name: selectedToken?.name || s });
+    } else {
+      addPosition({ symbol: s, quantity: qn, id });
+    }
     const exists = userTokens.find(t => t.symbol.toUpperCase() === s);
-    if (!exists) {
-      const meta: TokenMeta = { id, symbol: s, name: selectedToken?.name || s };
-      persistUserTokens([meta, ...userTokens].slice(0, 10000));
-    }
+    if (!exists) persistUserTokens([{ id, symbol: s, name: selectedToken?.name || s }, ...userTokens].slice(0, 10000));
     setSymbol(''); setQty(''); setSelectedToken(null); setShowSuggest(false);
-    // Ne rafraîchit pas les prix (demande utilisateur)
-  }
+  };
 
   // Remote fetch
   // Autocomplete fetch (debounce 200ms) vers /api/tokens/search
@@ -265,28 +270,73 @@ export function PortfolioMain() {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-  const q = symbol;
+    const q = symbol;
     if (!q) { setResults([]); setNoResults(false); setSuggestError(null); lastQueryRef.current = ''; return; }
     debounceRef.current = setTimeout(() => triggerSearch(q), 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [symbol, triggerSearch]);
+
+  // Portal position update
+  useEffect(() => {
+    if (showSuggest && comboRef.current) {
+      const r = comboRef.current.getBoundingClientRect();
+      setPortalPos({ left: r.left + window.scrollX, top: r.bottom + window.scrollY, width: r.width });
+    }
+  }, [showSuggest, symbol]);
+
+  const [showHistory, setShowHistory] = useState(false);
 
   return (
     <section aria-label="Portefeuille" className="mt-6 md:mt-8 max-w-6xl mx-auto px-5">
       <div className="rounded-2xl border border-neutral-200 bg-white p-6 md:p-8 relative overflow-hidden">
         <div aria-hidden className="pointer-events-none absolute inset-0" />
         <header className="relative z-10 flex flex-col md:flex-row md:items-end gap-4 md:gap-8 justify-between">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-neutral-900 flex items-center gap-3">Portefeuille {isMock && (<span className="text-[10px] uppercase tracking-wide bg-neutral-900 text-white px-2 py-1 rounded">Mock</span>)} {!isMock && (<span className="text-[10px] uppercase tracking-wide bg-emerald-600 text-white px-2 py-1 rounded">Live</span>)}</h2>
-            <p className="mt-2 text-sm text-neutral-600 max-w-xl">Gère tes positions, valorisation temps réel (batch prix) & poids de chaque actif.</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-neutral-900 flex items-center gap-3">Portefeuille {isMock && (<span className="text-[10px] uppercase tracking-wide bg-neutral-900 text-white px-2 py-1 rounded">Mock</span>)} {!isMock && (<span className="text-[10px] uppercase tracking-wide bg-emerald-600 text-white px-2 py-1 rounded">Live</span>)}</h2>
+              <button
+                type="button"
+                onClick={() => setShowHistory(v => !v)}
+                className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium border border-neutral-300 transition bg-neutral-100 hover:bg-neutral-200 text-neutral-800 ${showHistory ? 'ring-1 ring-neutral-500' : ''}`}
+                aria-pressed={showHistory}
+              >
+                <span className="inline-block w-3.5 h-3.5 relative">{/* clock icon */}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 15 15" /></svg>
+                </span>
+                Historique
+              </button>
+              <button
+                type="button"
+                onClick={() => console.log('[debug] effectivePositions', effectivePositions)}
+                className="rounded bg-neutral-100 hover:bg-neutral-200 px-3 py-1 text-sm"
+              >Debug positions</button>
+            </div>
+            <p className="text-sm text-neutral-600 max-w-xl">Gère tes positions, valorisation temps réel (batch prix) & poids de chaque actif.</p>
           </div>
-          <div className="flex flex-col items-start md:items-end">
+            <div className="flex flex-col items-start md:items-end">
             <span className="text-xs uppercase tracking-wide text-neutral-500 mb-1">Valeur Totale</span>
             <span className="text-3xl font-semibold tabular-nums text-neutral-900">{total ? total.toLocaleString(undefined,{maximumFractionDigits:2}) + ' $' : '—'}</span>
-            <button onClick={() => refresh()} className="mt-2 rounded border border-neutral-300 bg-neutral-100 px-3 py-1.5 text-xs font-medium hover:bg-neutral-200 transition" disabled={loading}>{loading ? 'Maj…' : 'Refresh'}</button>
+              {unknownPrices?.length ? <span className="mt-1 text-[10px] text-amber-600">{unknownPrices.length} inconnu(s)</span> : null}
+            <button
+              onClick={() => refresh()}
+              className="mt-2 rounded border border-neutral-300 bg-neutral-100 px-3 py-1.5 text-xs font-medium hover:bg-neutral-200 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              disabled={loading}
+            >
+              {loading && <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900" />}
+              {loading ? 'Maj…' : 'Refresh'}
+            </button>
           </div>
         </header>
         <div className="relative z-10 mt-8 grid gap-10 md:grid-cols-5">
+      {session && sync.offerImport && (
+            <div className="md:col-span-5 mb-4 rounded border border-amber-300 bg-amber-50 p-3 flex items-center justify-between text-xs text-amber-900">
+              <span>Des positions locales ont été détectées. Importer dans ton compte ?</span>
+              <div className="flex gap-2">
+        <button onClick={sync.importLocalIfServerEmpty} className="px-3 py-1 rounded bg-amber-600 text-white hover:bg-amber-700">Importer</button>
+        <button onClick={sync.hideImport} className="px-3 py-1 rounded border border-amber-400 hover:bg-amber-100">Ignorer</button>
+              </div>
+            </div>
+          )}
           <div className="md:col-span-3">
             <table className="w-full text-xs md:text-sm">
               <thead>
@@ -299,30 +349,47 @@ export function PortfolioMain() {
                   <th></th>
                 </tr>
               </thead>
-              <tbody>
-                {positions.map(p => {
-                  const pr = prices[p.id]?.usd || 0;
-                  const val = pr * p.quantity;
-                  const weight = total ? (val / total) * 100 : 0;
-                  return (
-                    <tr key={p.symbol} className="border-t border-neutral-200 align-middle hover:bg-neutral-50/60">
-                      <td className="py-2 font-semibold text-neutral-900">{p.symbol}</td>
-                      <td className="py-2 text-right">
-                        <input
-                          type="number"
-                          value={p.quantity}
-                          onChange={e => updateQuantity(p.symbol, parseFloat(e.target.value)||0)}
-                          className="w-20 rounded border border-neutral-300 bg-white px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-neutral-900/30"
-                          step="0.0001"
-                        />
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-neutral-700">{pr ? pr.toLocaleString(undefined,{maximumFractionDigits:2}) : '…'}</td>
-                      <td className="py-2 text-right tabular-nums text-neutral-700">{val ? val.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-                      <td className="py-2 text-right tabular-nums text-neutral-700">{weight ? weight.toFixed(2)+'%' : '—'}</td>
-                      <td className="py-2 text-right"><button onClick={() => remove(p.symbol)} className="text-neutral-400 hover:text-neutral-900 transition" aria-label={`Supprimer ${p.symbol}`}>×</button></td>
-                    </tr>
-                  );
-                })}
+              <tbody key={session ? sync.version : undefined}>
+                {effectivePositions
+                  .slice()
+                  .sort((a: any,b: any) => {
+                    const qa = (a.quantity ?? a.amount ?? 0); const qb = (b.quantity ?? b.amount ?? 0);
+                    if (qb !== qa) return qb - qa;
+                    return (a.symbol||'').localeCompare(b.symbol||'');
+                  })
+                  .map((p: any) => {
+                    const baseId = p.id || p.assetId || p.symbol?.toLowerCase?.() || '';
+                    const qty = p.quantity ?? p.amount ?? 0;
+                    let pr = livePrices?.[baseId]?.usd;
+                    if (pr == null && p.symbol) {
+                      const meta = TOKENS.find(t => t.symbol.toUpperCase() === (p.symbol||'').toUpperCase());
+                      if (meta) pr = livePrices?.[meta.id]?.usd;
+                    }
+                    const val = pr != null ? pr * qty : null;
+                    const weight = (pr != null) && total ? (val! / total) * 100 : 0;
+                    const unknown = pr == null;
+                    return (
+                      <tr key={p.origId || p.symbol} className="border-t border-neutral-200 align-middle hover:bg-neutral-50/60 opacity-100">
+                        <td className="py-2 font-semibold text-neutral-900 flex items-center gap-2">
+                          <span>{p.symbol}</span>
+                          {unknown && <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-600">Inconnu</span>}
+                        </td>
+                        <td className="py-2 text-right">
+                          <input
+                            type="number"
+                            value={qty}
+                            onChange={e => { const v = parseFloat(e.target.value)||0; if (session) { const serverId = (p as any).origId; if (serverId) sync.update(serverId, { amount: v }); } else { updateQuantity(p.symbol, v); } }}
+                            className="w-24 rounded border border-neutral-300 bg-white px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-neutral-900/30"
+                            step="0.0001"
+                          />
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-neutral-700">{pr != null ? pr.toLocaleString(undefined,{maximumFractionDigits:2}) : '…'}</td>
+                        <td className="py-2 text-right tabular-nums text-neutral-700">{val != null ? val.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+                        <td className="py-2 text-right tabular-nums text-neutral-700">{pr != null && weight ? weight.toFixed(2)+'%' : '—'}</td>
+                        <td className="py-2 text-right"><button onClick={() => { if (session) { const serverId = (p as any).origId; if (serverId) sync.remove(serverId); } else { remove(p.symbol); } }} className="text-neutral-400 hover:text-neutral-900 transition" aria-label={`Supprimer ${p.symbol}`}>×</button></td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
             <form onSubmit={onAdd} className="mt-4 flex flex-wrap gap-2 text-xs md:text-sm">
@@ -477,34 +544,63 @@ export function PortfolioMain() {
             </div>
             <h3 className="text-sm font-semibold tracking-wide text-neutral-800">Allocation</h3>
             <ul className="space-y-2">
-              {positions.map(p => {
-                const pr = prices[p.id]?.usd || 0;
-                const val = pr * p.quantity;
-                const weight = total ? (val / total) * 100 : 0;
-                return (
-                  <li key={p.symbol} className="text-xs">
-                    <div className="flex justify-between mb-1"><span className="font-medium text-neutral-800">{p.symbol}</span><span className="tabular-nums text-neutral-600">{weight ? weight.toFixed(1)+'%' : '—'}</span></div>
-                    <div className="h-2 rounded bg-neutral-200 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: weight + '%' }}
-                        transition={{ type: 'spring', stiffness: 120, damping: 26 }}
-                        className="h-full bg-neutral-900"
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-              {!positions.length && <li className="text-neutral-400 text-xs">Aucune position.</li>}
+              {effectivePositions
+                .slice()
+                .sort((a:any,b:any)=>{
+                  const qa = (a.quantity ?? a.amount ?? 0); const qb = (b.quantity ?? b.amount ?? 0);
+                  if (qb !== qa) return qb - qa; return (a.symbol||'').localeCompare(b.symbol||'');
+                })
+                .map((p:any) => {
+                  const baseId = p.id || p.assetId || p.symbol?.toLowerCase?.() || '';
+                  const qty = p.quantity ?? p.amount ?? 0;
+          let pr: number | null = livePrices?.[baseId]?.usd ?? null;
+                  if (pr == null || pr === 0) {
+                    if (p.symbol) {
+                      const meta = TOKENS.find(t => t.symbol.toUpperCase() === (p.symbol||'').toUpperCase());
+            if (meta) { const alt = livePrices?.[meta.id]?.usd; if (typeof alt === 'number') pr = alt; }
+                    }
+                  }
+                    const val = pr != null ? pr * qty : null;
+                    const weight = (pr != null) && total ? (val! / total) * 100 : 0;
+                  return (
+                    <li key={p.origId || p.symbol} className="text-xs">
+                      <div className="flex justify-between mb-1">
+                        <span className="font-medium text-neutral-800 flex items-center gap-2">{p.symbol}{pr==null && <span className="text-[8px] uppercase tracking-wide px-1 py-0.5 rounded bg-neutral-200 text-neutral-600">Inconnu</span>}</span>
+                        <span className="tabular-nums text-neutral-600">{pr && weight ? weight.toFixed(1)+'%' : '—'}</span>
+                      </div>
+                      <div className="h-2 rounded bg-neutral-200 overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: pr ? (weight + '%') : '0%' }}
+                          transition={{ type: 'spring', stiffness: 120, damping: 26 }}
+                          className="h-full bg-neutral-900"
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              {!effectivePositions.length && <li className="text-neutral-400 text-xs">Aucune position.</li>}
             </ul>
             <PortfolioChat snapshot={{
-              positions: positions.map(p => {
-                const pr = prices[p.id]?.usd || 0; return { symbol: p.symbol, quantity: p.quantity, valueUsd: pr * p.quantity };
+              positions: effectivePositions.map((p:any) => {
+                const baseId = p.id || p.assetId || p.symbol.toLowerCase();
+                const qty = p.quantity ?? p.amount ?? 0; let pr = prices[baseId]?.usd || 0; if (!pr && p.symbol) { const meta = TOKENS.find(t => t.symbol.toUpperCase() === p.symbol.toUpperCase()); if (meta) pr = prices[meta.id]?.usd || pr; } return { symbol: p.symbol, quantity: qty, valueUsd: pr * qty };
               }),
               totalValue: total
             }} />
           </div>
         </div>
+        {showHistory && (
+          <div className="mt-10">
+            <h3 className="text-sm font-semibold mb-3 text-neutral-800 flex items-center gap-2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 15 15" /></svg>
+              Historique des transactions
+            </h3>
+            <div className="rounded-xl border border-neutral-200 bg-white p-4">
+              <TransactionsHistory />
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
